@@ -1,4 +1,5 @@
 # -*- encoding: utf-8 -*-
+from lxml.builder import ElementMaker
 
 class CF:
     """ Confidence values """
@@ -11,16 +12,49 @@ class CF:
     NOVALUE = 0
     UNSET = -1
 
-def jsondatum(mdschema='dc', element=None, qualifier=None, lang=None, authority=None, confidence=None, value=None):
-    if mdschema is None or element is None:
-        raise ValueError('Nem mdschema nem element podem ser nulos')
-    datum = {'mdschema':mdschema, 'element':element, 'value': value}
-    if qualifier is not None:
-        datum['qualifier'] = qualifier
-    if lang is not None:
-        datum['lang'] = lang
-    if authority is not None:
-        datum['authority'] = authority
-    if confidence is not None:
-        datum['confidence'] = confidence
-    return datum
+class JSONMetadataBuilder(object):
+    def __init__(self, meta={}):
+        self.meta = dict(meta)
+    def add(self, mdschema='dc', element=None, qualifier=None, lang=None, authority=None, confidence=None, value=None, **kwargs):
+        if mdschema is None or element is None:
+            raise ValueError('Nor mdschema nor element can be null')
+        datum = dict(kwargs)
+        datum['value'] = value
+        if lang is not None:
+            datum['lang'] = lang
+        if authority is not None:
+            datum['authority'] = authority
+        if confidence is not None:
+            datum['confidence'] = confidence
+        self.meta\
+            .setdefault(mdschema, {})\
+            .setdefault(element, {})\
+            .setdefault(qualifier, [])\
+            .append(datum)
+    def build(self):
+        return self.meta
+
+def jsonToXml(json):
+    nsmap = {'atom': 'http://www.w3.org/2005/Atom',
+             'dim':  'http://www.dspace.org/xmlns/dspace/dim'}
+    atom = ElementMaker(namespace=nsmap['atom'], nsmap=nsmap)
+    dim  = ElementMaker(namespace=nsmap['dim'],  nsmap=nsmap)
+    fields = []
+    assert(isinstance(json, dict))
+    for mdschema, elements in json.iteritems():
+        assert(isinstance(elements, dict))
+        for element, qualifiers in elements.iteritems():
+            assert(isinstance(qualifiers, dict))
+            for qualifier, metadata in qualifiers.iteritems():
+                assert(isinstance(metadata, list))
+                for metadatum in metadata:
+                    assert(isinstance(metadatum, dict))
+                    value = metadatum.get('value')
+                    attr = {k:str(v) for k,v in metadatum.iteritems()
+                            if k != 'value' and not k.startswith('_') and v is not None}
+                    attr['mdschema'] = mdschema
+                    attr['element'] = element
+                    if qualifier is not None:
+                        attr['qualifier'] = qualifier
+                    fields.append(dim.field(value, **attr))
+    return atom.entry(*fields)
