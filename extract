@@ -1,6 +1,8 @@
 #!/usr/bin/python
 # -*- encoding: utf-8 -*-
 import sys, logging, traceback
+from collections import namedtuple
+from recordtype import recordtype
 from ufscar.pessoa import PessoaInstituicao
 from metadata import JSONMetadataBuilder, CF
 from conf.dspaceconf import authorityPrefix
@@ -9,43 +11,131 @@ import ws, db, util
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger('extract')
 
-def metadataArtigo(item, xmlCV, xmlProducao):
-    meta = JSONMetadataBuilder()
-    autores = sorted(xmlProducao.xpath('AUTORES'),
-                     key=lambda autor: int(autor.get('ORDEM-DE-AUTORIA')))
-    for autor in autores:
-        nome = autor.get('NOME-COMPLETO-DO-AUTOR')
-        nro_id_cnpq = autor.get('NRO-ID-CNPQ')
-        authority = None if nro_id_cnpq in (None, '') else authorityPrefix+nro_id_cnpq
-        confidence = None if authority is None else CF.UNCERTAIN
-        meta.add(element='contributor', qualifier='author',
-                 authority=authority, confidence=confidence,
-                 value=nome)
-    return meta.build()
+class MetadataAbortItemException(Exception):
+    pass
 
-def metadataTrabalhoEventos(item, xmlCV, xmlProducao):
-    return None
+class MetadataProcessor(JSONMetadataBuilder):
+    def run(self):
+        return self\
+               .processAutores()
 
-def processCV(pessoaLattes, cv):
-    seqProdInDB = getItemsProdInDB(pessoaLattes)
-    seqProdInCV = set()
-    for artigo in cv.xpath('//ARTIGO-PUBLICADO'):
-        seqProdInCV.add(processProducao(pessoaLattes, metadataArtigo, cv, artigo))
-    for trabalho in cv.xpath('//TRABALHO-EM-EVENTOS'):
-        seqProdInCV.add(processProducao(pessoaLattes, metadataTrabalhoEventos, cv, trabalho))
-    processRemovedItems(pessoaLattes, seqProdInDB - seqProdInCV)
+    def processAutores(self):
+        autores = [MetadataProcessor.xmlToAuthor(autor) for autor in
+                   sorted(self.xml.xpath('AUTORES'),
+                          key=lambda autor: int(autor.get('ORDEM-DE-AUTORIA')))]
+        myidcnpq = self.cvproc.pessoaLattes.id_cnpq
+        confidenceInMyself = CF.UNCERTAIN
+        if myidcnpq not in (a.idcnpq for a in autores):
+            # Autor dono do currículo não está marcado no atributo NRO-ID-CNPQ
+            # Faz score dos autores que não possuem idcnpq especificado
+            STpl = namedtuple('STpl', ['score', 'autor'])
+            score = lambda a: \
+                int(a.nomecompleto == self.cvproc.nomeCompleto) + \
+                int(a.nomecitacao in self.cvproc.nomesEmCitacoes)
+            scoredAutores = sorted((STpl(score(a), a) for a in autores if a.idcnpq is None), reverse=True)
+            # Verifica se algum match foi encontrado
+            if len(scoredAutores) == 0 or scoredAutores[0].score == 0:
+                logger.critical(
+                    'Autor não encontrado em sua própria produção! item=%r, autores=%r, scoredAutores=%r',
+                    self.item, autores, scoredAutores
+                )
+                raise MetadataAbortItemException()
+            # Define idcnpq para o melhor score
+            scoredAutores[0].autor.idcnpq = myidcnpq
+            if len(scoredAutores) > 1 and scoredAutores[0].score == scoredAutores[1].score:
+                # Empate de score
+                confidenceInMyself = CF.AMBIGUOUS
+        for autor in autores:
+            authority  = util.maybeBind(lambda x: authorityPrefix + x, autor.idcnpq)
+            confidence = confidenceInMyself \
+                if autor.idcnpq == myidcnpq \
+                else util.maybeBind(lambda _: CF.UNCERTAIN, authority)
+            self.add(element='contributor', qualifier='author',
+                     authority=authority, confidence=confidence, value=autor.nomecitacao,
+                     _nomecompleto=autor.nomecompleto)
+        return self
 
-def processProducao(pessoaLattes, getMetadata, xmlCV, xmlProducao):
-    item = getItem(pessoaLattes, xmlProducao)
-    meta = getMetadata(item, xmlCV, xmlProducao)
-    lastMeta = db.session.query(db.Revision.meta)\
-        .filter(db.Revision.item==item,
-                db.Revision.source=='extract')\
-        .order_by(db.Revision.id.desc())\
-        .limit(1).scalar()
-    if meta != lastMeta:
-        db.session.add(db.Revision(item=item, source='extract', meta=meta))
-    return item.seq_prod
+    Author = recordtype('Author', ['idcnpq', 'nomecompleto', 'nomecitacao'])
+    authorAttrs = ('NRO-ID-CNPQ', 'NOME-COMPLETO-DO-AUTOR', 'NOME-PARA-CITACAO')
+    @staticmethod
+    def xmlToAuthor(xml):
+        return MetadataProcessor.Author(*(util.noneIfEmpty(xml.get(k))
+                                          for k in MetadataProcessor.authorAttrs))
+
+    @staticmethod
+    def new(cvproc, item, xml):
+        return MetadataProcessor.supportedTags[xml.tag](cvproc, item, xml)
+
+    @staticmethod
+    def getSeqProd(xml):
+        return int(xml.get('SEQUENCIA-PRODUCAO'))
+
+    def __init__(self, cvproc, item, xml):
+        super(MetadataProcessor, self).__init__()
+        assert(isinstance(cvproc, CVProcessor))
+        assert(isinstance(item, db.Item))
+        self.cvproc = cvproc
+        self.item = item
+        self.xml = xml
+
+
+class MetadataProcessorArtigo(MetadataProcessor):
+    def run(self):
+        super(MetadataProcessorArtigo, self).run()
+        return self
+
+
+class MetadataProcessorTrabalhoEventos(MetadataProcessor):
+    def run(self):
+        super(MetadataProcessorTrabalhoEventos, self).run()
+        return self
+
+
+MetadataProcessor.supportedTags = {
+    'ARTIGO-PUBLICADO': MetadataProcessorArtigo,
+    'TRABALHO-EM-EVENTOS': MetadataProcessorTrabalhoEventos
+}
+
+MetadataProcessor.xpathSel = '|'.join(
+    '//'+tag for tag in MetadataProcessor.supportedTags)
+
+
+class CVProcessor(object):
+    def __init__(self, pessoaLattes, xmlCV):
+        assert(isinstance(pessoaLattes, db.PessoaLattes))
+        self.pessoaLattes = pessoaLattes
+        self.xmlCV = xmlCV
+        self.seqProdInCV = set()
+        self._initNomes()
+
+    def _initNomes(self):
+        dadosGerais = util.singleTag(self.xmlCV.xpath('//DADOS-GERAIS'))
+        self.nomeCompleto = dadosGerais.get('NOME-COMPLETO')
+        self.nomesEmCitacoes = {s.strip() for s in dadosGerais.get('NOME-EM-CITACOES-BIBLIOGRAFICAS').split(';')}
+
+    def run(self):
+        seqProdInDB = getItemsProdInDB(self.pessoaLattes)
+        for xmlProducao in self.xmlCV.xpath(MetadataProcessor.xpathSel):
+            self.processProducao(xmlProducao)
+        processRemovedItems(self.pessoaLattes, seqProdInDB - self.seqProdInCV)
+
+    def processProducao(self, xmlProducao):
+        item = getOrCreateItem(self.pessoaLattes, xmlProducao)
+        try:
+            meta = MetadataProcessor.new(self, item, xmlProducao).run().build()
+        except MetadataAbortItemException:
+            traceback.print_exc()
+            db.session.expunge(item)
+            return
+        lastMeta = db.session.query(db.Revision.meta)\
+            .filter(db.Revision.item==item,
+                    db.Revision.source=='extract')\
+            .order_by(db.Revision.id.desc())\
+            .limit(1).scalar()
+        if meta != lastMeta:
+            db.session.add(db.Revision(item=item, source='extract', meta=meta))
+        self.seqProdInCV.add(item.seq_prod)
+
 
 def getItemsProdInDB(pessoaLattes):
     """ Obtém o seq_prod de todos os itens de uma pessoa """
@@ -70,30 +160,41 @@ def processRemovedItems(pessoaLattes, seqProdToRemove):
         # Insere nova revisão do item com metadado nulo
         db.session.add(db.Revision(item=item, source='extract', meta=None))
 
-def getItem(pessoaLattes, xmlProducao):
-    item, created = \
-        db.session.get_or_create(db.Item,
-                                 pessoa_lattes=pessoaLattes,
-                                 seq_prod=int(xmlProducao.get('SEQUENCIA-PRODUCAO')))
+def getOrCreateItem(pessoaLattes, xmlProducao):
+    item, created = db.session\
+        .get_or_create(db.Item, pessoa_lattes=pessoaLattes,
+                       seq_prod=MetadataProcessor.getSeqProd(xmlProducao))
     if created:
-        logger.debug('Novo item %r' % item)
+        logger.debug('Novo item %r', item)
     return item
 
 def processPerson(pessoa):
-    pessoaLattes = getPessoaLattes(pessoa)
+    pessoaLattes = getOrCreatePessoaLattes(pessoa)
     cv = tryGetCV(pessoaLattes.id_cnpq)
     if cv is None:
         return
-    logger.info('Processando CV de %r' % pessoaLattes)
+    logger.info('Processando CV de %r', pessoaLattes)
     # Processa cada CV em uma transação
     try:
-        processCV(pessoaLattes, cv)
-        db.session.commit()
+        CVProcessor(pessoaLattes, cv).run()
+        #db.session.commit()
+        db.session.rollback()
     except:
         traceback.print_exc()
         db.session.rollback()
 
 wsCV = ws.WSCurriculo()
+
+def getOrCreatePessoaLattes(pessoa):
+    if pessoa.getPessoaLattes() is None:
+        cpf = pessoa.getCpf()
+        logger.info('Obtendo id_cnpq do CPF %s', cpf)
+        db.session.add(db.PessoaLattes(
+            id_cnpq=wsCV.obterIdCNPq(cpf),
+            pessoa=pessoa.getEntidade()
+        ))
+        db.session.commit()
+    return pessoa.getPessoaLattes()
 
 def tryGetCV(id_cnpq):
     try:
@@ -104,30 +205,19 @@ def tryGetCV(id_cnpq):
             ocorrencia = wsCV.obterOcorrencia(id_cnpq)
         except e:
             traceback.print_exc()
-        logger.error('Impossível obter CV do id_cnpq %s: %r' % (id_cnpq, ocorrencia))
+        logger.error('Impossível obter CV do id_cnpq %s: %r', id_cnpq, ocorrencia)
     return None
-
-def getPessoaLattes(pessoa):
-    if pessoa.getPessoaLattes() is None:
-        cpf = pessoa.getCpf()
-        logger.info('Obtendo id_cnpq do CPF %s' % cpf)
-        db.session.add(db.PessoaLattes(
-            id_cnpq=wsCV.obterIdCNPq(cpf),
-            pessoa=pessoa.getEntidade()
-        ))
-        db.session.commit()
-    return pessoa.getPessoaLattes()
 
 def main():
     for line in sys.stdin.xreadlines():
         pessoaIdent = util.onlyNumbers(line)
         if pessoaIdent == '':
             if line.strip() != '':
-                logger.warn('Ignorando linha não compreendida: %r' % line)
+                logger.warn('Ignorando linha não compreendida: %r', line)
             continue
         pessoa = PessoaInstituicao.fromIdentificador(pessoaIdent)
         if pessoa is None:
-            logger.error('Ignorando pessoa não encontrada: %s' % pessoaIdent)
+            logger.error('Ignorando pessoa não encontrada: %s', pessoaIdent)
         else:
             processPerson(pessoa)
 

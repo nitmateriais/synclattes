@@ -31,6 +31,7 @@ class JSONMetadataBuilder(object):
             .setdefault(element, {})\
             .setdefault(qualifier, [])\
             .append(datum)
+        return self
     def build(self):
         return self.meta
 
