@@ -6,3 +6,4 @@ import conf.dbconf as dbconf
 engine = create_engine(dbconf.url)
 Base = declarative_base()
 Session = sessionmaker(bind=engine)
+session = Session()

@@ -1,0 +1,65 @@
+#!/usr/bin/python
+# -*- encoding: utf-8 -*-
+import sys, logging, traceback
+from sqlalchemy.orm.exc import NoResultFound
+import ufscar.pessoa as PessoaInstituicao
+import ws, db, util
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger('extract')
+
+def processCV(cv):
+    for artigo in cv.xpath('//ARTIGO-PUBLICADO'):
+        print repr(artigo)
+    for trabalho in cv.xpath('//TRABALHO-EM-EVENTOS'):
+        print repr(trabalho)
+
+def processPerson(pessoa):
+    id_cnpq = getIdCnpq(pessoa)
+    cv = tryGetCV(id_cnpq)
+    if cv is None:
+        return
+    logger.info('Processando CV %s' % id_cnpq)
+    processCV(cv)
+
+wsCV = ws.WSCurriculo()
+
+def tryGetCV(id_cnpq):
+    try:
+        return wsCV.obterCV(id_cnpq)
+    except:
+        ocorrencia = None
+        try:
+            ocorrencia = wsCV.obterOcorrencia(id_cnpq)
+        except e:
+            traceback.print_exc()
+        logger.error('Impossível obter CV do id_cnpq %s: %r' % (id_cnpq, ocorrencia))
+    return None
+
+def getIdCnpq(pessoa):
+    if pessoa.pessoa_lattes is None:
+        cpf = pessoa.cpf
+        logger.info('Obtendo id_cnpq do CPF %s' % cpf)
+        db.session.add(db.PessoaLattes(
+            id_cnpq=wsCV.obterIdCNPq(cpf),
+            pessoa=pessoa
+        ))
+        db.session.commit()
+    return pessoa.pessoa_lattes.id_cnpq
+
+def main():
+    for line in sys.stdin.xreadlines():
+        pessoaIdent = util.onlyNumbers(line)
+        if pessoaIdent == '':
+            if line.strip() != '':
+                logger.warn('Ignorando linha não compreendida: %r' % line)
+            continue
+        try:
+            pessoa = PessoaInstituicao.getPessoa(pessoaIdent)
+        except NoResultFound:
+            logger.error('Ignorando pessoa não encontrada: %s' % pessoaIdent)
+        else:
+            processPerson(pessoa)
+
+if __name__ == '__main__':
+    main()
