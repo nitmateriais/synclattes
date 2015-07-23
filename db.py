@@ -15,7 +15,7 @@ class Item(Base):
                       {'schema': 'synclattes'})
 
     id = Column(BigInteger, primary_key=True)
-    id_cnpq = Column(BigInteger, ForeignKey('synclattes.pessoa_lattes.id_cnpq'), nullable=False)
+    id_cnpq = Column(String, ForeignKey('synclattes.pessoa_lattes.id_cnpq'), nullable=False)
     seq_prod = Column(Integer, nullable=False)
     dspace_item_id = Column(BigInteger, nullable=True)
     dspace_cur_rev_id = Column(BigInteger, ForeignKey('synclattes.revision.id'), nullable=True)
@@ -60,7 +60,7 @@ class PessoaLattes(Base):
     __table_args__ = (UniqueConstraint('pessoa_id'),
                       {'schema': 'synclattes'})
 
-    id_cnpq = Column(BigInteger, primary_key=True, autoincrement=False)
+    id_cnpq = Column(String, primary_key=True, autoincrement=False)
     pessoa_id = Column(BigInteger, ForeignKey('core.pessoa.id'), nullable=False)
 
     def __repr__(self):
