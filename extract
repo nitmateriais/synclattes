@@ -2,36 +2,49 @@
 # -*- encoding: utf-8 -*-
 import sys, logging, traceback
 from ufscar.pessoa import PessoaInstituicao
+from metadata import jsondatum, CF
+from conf.dspaceconf import authorityPrefix
 import ws, db, util
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger('extract')
 
-def metadataArtigo(item, xmlProducao):
-    return [{'mdschema':'ufscar', 'element':'test', 'value':'blah'}]
+def metadataArtigo(item, xmlCV, xmlProducao):
+    meta = []
+    autores = sorted(xmlProducao.xpath('AUTORES'),
+                     key=lambda autor: int(autor.get('ORDEM-DE-AUTORIA')))
+    for autor in autores:
+        nome = autor.get('NOME-COMPLETO-DO-AUTOR')
+        nro_id_cnpq = autor.get('NRO-ID-CNPQ')
+        authority = None if nro_id_cnpq in (None, '') else authorityPrefix+nro_id_cnpq
+        confidence = None if authority is None else CF.UNCERTAIN
+        meta.append(jsondatum(element='contributor', qualifier='author',
+                              authority=authority, confidence=confidence,
+                              value=nome))
+    return meta
 
-def metadataTrabalhoEventos(item, xmlProducao):
+def metadataTrabalhoEventos(item, xmlCV, xmlProducao):
     return None
 
 def processCV(pessoaLattes, cv):
     seqProdInDB = getItemsProdInDB(pessoaLattes)
     seqProdInCV = set()
     for artigo in cv.xpath('//ARTIGO-PUBLICADO'):
-        seqProdInCV.add(processProducao(pessoaLattes, metadataArtigo, artigo))
+        seqProdInCV.add(processProducao(pessoaLattes, metadataArtigo, cv, artigo))
     for trabalho in cv.xpath('//TRABALHO-EM-EVENTOS'):
-        seqProdInCV.add(processProducao(pessoaLattes, metadataTrabalhoEventos, trabalho))
+        seqProdInCV.add(processProducao(pessoaLattes, metadataTrabalhoEventos, cv, trabalho))
     processRemovedItems(pessoaLattes, seqProdInDB - seqProdInCV)
 
-def processProducao(pessoaLattes, getMetadata, xmlProducao):
+def processProducao(pessoaLattes, getMetadata, xmlCV, xmlProducao):
     item = getItem(pessoaLattes, xmlProducao)
-    metadata = getMetadata(item, xmlProducao)
-    lastMetadata = db.session.query(db.Revision.meta)\
+    meta = getMetadata(item, xmlCV, xmlProducao)
+    lastMeta = db.session.query(db.Revision.meta)\
         .filter(db.Revision.item==item,
                 db.Revision.source=='extract')\
         .order_by(db.Revision.id.desc())\
         .limit(1).scalar()
-    if metadata != lastMetadata:
-        db.session.add(db.Revision(item=item, source='extract', meta=metadata))
+    if meta != lastMeta:
+        db.session.add(db.Revision(item=item, source='extract', meta=meta))
     return item.seq_prod
 
 def getItemsProdInDB(pessoaLattes):
