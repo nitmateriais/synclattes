@@ -1,18 +1,13 @@
 #!/usr/bin/python
 # -*- encoding: utf-8 -*-
 
-from sqlalchemy import create_engine, \
-     Column, ForeignKey, UniqueConstraint, \
+from sqlalchemy import Column, ForeignKey, UniqueConstraint, \
      BigInteger, Integer, String, DateTime, Date, Boolean
 from sqlalchemy.dialects.postgresql import JSONB, ENUM
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker, relationship, backref
+from sqlalchemy.orm import relationship, backref
 import sys, datetime
-import dbconf
-
-engine = create_engine(dbconf.url)
-Base = declarative_base()
-
+from dbconn import *
+from ufscar.db import *
 
 class Item(Base):
     __tablename__ = 'item'
@@ -37,8 +32,8 @@ class Item(Base):
                                   foreign_keys=[dspace_cur_rev_id])
 
     def __repr__(self):
-        return '<Item(id=%s, id_cnpq=%s, seq_prod=%s, dspace_item_id=%s, skip=%s, frozen=%s)>' % \
-               (self.id, self.id_cnpq, self.seq_prod, self.dspace_item_id, self.skip, self.frozen)
+        return '<Item(id=%s, pessoa_lattes=%s, seq_prod=%s, dspace_item_id=%s, skip=%s, frozen=%s)>' % \
+               (self.id, self.pessoa_lattes, self.seq_prod, self.dspace_item_id, self.skip, self.frozen)
 
 
 class Revision(Base):
@@ -62,7 +57,8 @@ class Revision(Base):
 
 class PessoaLattes(Base):
     __tablename__ = 'pessoa_lattes'
-    __table_args__ = {'schema': 'synclattes'}
+    __table_args__ = (UniqueConstraint('pessoa_id'),
+                      {'schema': 'synclattes'})
 
     id_cnpq = Column(BigInteger, primary_key=True, autoincrement=False)
     pessoa_id = Column(BigInteger, ForeignKey('core.pessoa.id'), nullable=False)
@@ -72,38 +68,7 @@ class PessoaLattes(Base):
                (self.id_cnpq, self.pessoa_id)
 
 
-class Pessoa(Base):
-    __tablename__ = 'pessoa'
-    __table_args__ = (UniqueConstraint('cpf'),
-                      {'schema': 'core'})
-
-    id = Column(BigInteger, primary_key=True)
-    version = Column(BigInteger, nullable=False)
-    cpf = Column(String(255), nullable=True)
-    data_nascimento = Column(Date, nullable=False)
-    email = Column(String(255), nullable=True)
-    idioma = Column(String(255), nullable=False)
-    nacionalidade_id = Column(BigInteger, nullable=False)
-    naturalidade_id = Column(BigInteger, nullable=True)
-    nome = Column(String(255), nullable=False)
-    passaporte = Column(String(255), nullable=True)
-    validade_visto = Column(Date, nullable=True)
-    sexo = Column(ENUM('M', 'F', name='sexo'), nullable=True)
-    alterado_manualmente = Column(Boolean, nullable=False, default=False)
-    date_created = Column(DateTime, nullable=True)
-    last_updated = Column(DateTime, nullable=True)
-
-    pessoa_lattes = relationship('PessoaLattes', uselist=False, backref='pessoa')
-
-    def __repr__(self):
-        return '<Pessoa(id=%s, cpf=%s, data_nascimento="%s", email="%s", nome="%s")>' % \
-               (self.id, self.cpf, self.data_nascimento, self.email, self.nome)
-
-
 if __name__ == '__main__':
-    # Se o script for executado diretamente, cria o schema do banco de dados
+    # Se o script for executado diretamente, cria as tabelas
     Base.metadata.create_all(engine)
     sys.exit(0)
-
-
-Session = sessionmaker(bind=engine)
