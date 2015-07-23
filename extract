@@ -8,19 +8,25 @@ import ws, db, util
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger('extract')
 
-def processCV(cv):
+def processCV(pessoa_lattes, cv):
+    print repr(db.session.get_or_create(db.Item, pessoa_lattes=pessoa_lattes, seq_prod=1))
     for artigo in cv.xpath('//ARTIGO-PUBLICADO'):
         print repr(artigo)
     for trabalho in cv.xpath('//TRABALHO-EM-EVENTOS'):
         print repr(trabalho)
 
 def processPerson(pessoa):
-    id_cnpq = getIdCnpq(pessoa)
-    cv = tryGetCV(id_cnpq)
+    pessoa_lattes = getPessoaLattes(pessoa)
+    cv = tryGetCV(pessoa_lattes.id_cnpq)
     if cv is None:
         return
-    logger.info('Processando CV %s' % id_cnpq)
-    processCV(cv)
+    logger.info('Processando CV de %r' % pessoa_lattes)
+    try:
+        processCV(pessoa_lattes, cv)
+        db.session.commit()
+    except:
+        traceback.print_exc()
+        db.session.rollback()
 
 wsCV = ws.WSCurriculo()
 
@@ -36,7 +42,7 @@ def tryGetCV(id_cnpq):
         logger.error('Impossível obter CV do id_cnpq %s: %r' % (id_cnpq, ocorrencia))
     return None
 
-def getIdCnpq(pessoa):
+def getPessoaLattes(pessoa):
     if pessoa.pessoa_lattes is None:
         cpf = pessoa.cpf
         logger.info('Obtendo id_cnpq do CPF %s' % cpf)
@@ -45,7 +51,7 @@ def getIdCnpq(pessoa):
             pessoa=pessoa
         ))
         db.session.commit()
-    return pessoa.pessoa_lattes.id_cnpq
+    return pessoa.pessoa_lattes
 
 def main():
     for line in sys.stdin.xreadlines():
