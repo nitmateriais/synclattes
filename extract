@@ -7,21 +7,74 @@ import ws, db, util
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger('extract')
 
-def processCV(pessoa_lattes, cv):
-    print repr(db.session.get_or_create(db.Item, pessoa_lattes=pessoa_lattes, seq_prod=1))
+def metadataArtigo(item, xmlProducao):
+    return [{'mdschema':'ufscar', 'element':'test', 'value':'blah'}]
+
+def metadataTrabalhoEventos(item, xmlProducao):
+    return None
+
+def processCV(pessoaLattes, cv):
+    seqProdInDB = getItemsProdInDB(pessoaLattes)
+    seqProdInCV = set()
     for artigo in cv.xpath('//ARTIGO-PUBLICADO'):
-        print repr(artigo)
+        seqProdInCV.add(processProducao(pessoaLattes, metadataArtigo, artigo))
     for trabalho in cv.xpath('//TRABALHO-EM-EVENTOS'):
-        print repr(trabalho)
+        seqProdInCV.add(processProducao(pessoaLattes, metadataTrabalhoEventos, trabalho))
+    processRemovedItems(pessoaLattes, seqProdInDB - seqProdInCV)
+
+def processProducao(pessoaLattes, getMetadata, xmlProducao):
+    item = getItem(pessoaLattes, xmlProducao)
+    metadata = getMetadata(item, xmlProducao)
+    lastMetadata = db.session.query(db.Revision.meta)\
+        .filter(db.Revision.item==item,
+                db.Revision.source=='extract')\
+        .order_by(db.Revision.id.desc())\
+        .limit(1).scalar()
+    if metadata != lastMetadata:
+        db.session.add(db.Revision(item=item, source='extract', meta=metadata))
+    return item.seq_prod
+
+def getItemsProdInDB(pessoaLattes):
+    """ Obtém o seq_prod de todos os itens de uma pessoa """
+    return {row[0] for row in
+        db.session.query(db.Item.seq_prod)\
+        .filter(db.Item.pessoa_lattes==pessoaLattes,
+                # O metadado da última revisão não é nulo
+                # (indica que o item não foi excluído)
+                db.session.query(db.Revision.meta)\
+                    .filter(db.Revision.item_id==db.Item.id)\
+                    .order_by(db.Revision.id.desc())\
+                    .limit(1).as_scalar()
+                .isnot(None))\
+        .all()}
+
+def processRemovedItems(pessoaLattes, seqProdToRemove):
+    """ Processa itens que existem no DB mas foram excluídos do CV """
+    for seqProd in seqProdToRemove:
+        item = db.session.query(db.Item)\
+            .filter(db.Item.pessoa_lattes==pessoaLattes, db.Item.seq_prod==seqProd)\
+            .one()
+        # Insere nova revisão do item com metadado nulo
+        db.session.add(db.Revision(item=item, source='extract', meta=None))
+
+def getItem(pessoaLattes, xmlProducao):
+    item, created = \
+        db.session.get_or_create(db.Item,
+                                 pessoa_lattes=pessoaLattes,
+                                 seq_prod=int(xmlProducao.get('SEQUENCIA-PRODUCAO')))
+    if created:
+        logger.debug('Novo item %r' % item)
+    return item
 
 def processPerson(pessoa):
-    pessoa_lattes = getPessoaLattes(pessoa)
-    cv = tryGetCV(pessoa_lattes.id_cnpq)
+    pessoaLattes = getPessoaLattes(pessoa)
+    cv = tryGetCV(pessoaLattes.id_cnpq)
     if cv is None:
         return
-    logger.info('Processando CV de %r' % pessoa_lattes)
+    logger.info('Processando CV de %r' % pessoaLattes)
+    # Processa cada CV em uma transação
     try:
-        processCV(pessoa_lattes, cv)
+        processCV(pessoaLattes, cv)
         db.session.commit()
     except:
         traceback.print_exc()

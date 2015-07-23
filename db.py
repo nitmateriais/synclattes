@@ -44,7 +44,7 @@ class Revision(Base):
     item_id = Column(BigInteger, ForeignKey('synclattes.item.id'), nullable=False)
     retrieval_time = Column(DateTime, nullable=False, default=datetime.datetime.utcnow)
     source = Column(String, nullable=False)
-    meta = Column(JSONB, nullable=True)  # null se o item foi removido
+    meta = Column(JSONB(none_as_null=True), nullable=True)  # null se o item foi removido
     duplicate_of_id = Column(BigInteger, ForeignKey('synclattes.revision.id'), nullable=True)
 
     duplicates = relationship('Revision', backref=backref('duplicate_of', remote_side=[id]),
