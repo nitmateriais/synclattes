@@ -2,7 +2,7 @@
 # -*- encoding: utf-8 -*-
 import sys, logging, traceback
 from sqlalchemy.orm.exc import NoResultFound
-import ufscar.pessoa as PessoaInstituicao
+from ufscar.pessoa import PessoaInstituicao
 import ws, db, util
 
 logging.basicConfig(level=logging.INFO)
@@ -43,15 +43,15 @@ def tryGetCV(id_cnpq):
     return None
 
 def getPessoaLattes(pessoa):
-    if pessoa.pessoa_lattes is None:
-        cpf = pessoa.cpf
+    if pessoa.getPessoaLattes() is None:
+        cpf = pessoa.getCpf()
         logger.info('Obtendo id_cnpq do CPF %s' % cpf)
         db.session.add(db.PessoaLattes(
             id_cnpq=wsCV.obterIdCNPq(cpf),
-            pessoa=pessoa
+            pessoa=pessoa.getEntidade()
         ))
         db.session.commit()
-    return pessoa.pessoa_lattes
+    return pessoa.getPessoaLattes()
 
 def main():
     for line in sys.stdin.xreadlines():
@@ -61,7 +61,7 @@ def main():
                 logger.warn('Ignorando linha não compreendida: %r' % line)
             continue
         try:
-            pessoa = PessoaInstituicao.getPessoa(pessoaIdent)
+            pessoa = PessoaInstituicao.fromIdentificador(pessoaIdent)
         except NoResultFound:
             logger.error('Ignorando pessoa não encontrada: %s' % pessoaIdent)
         else:
