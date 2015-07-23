@@ -32,7 +32,7 @@ class Item(Base):
                                   foreign_keys=[dspace_cur_rev_id])
 
     def __repr__(self):
-        return '<Item(id=%s, pessoa_lattes=%s, seq_prod=%s, dspace_item_id=%s, skip=%s, frozen=%s)>' % \
+        return '<Item(id=%r, pessoa_lattes=%r, seq_prod=%r, dspace_item_id=%r, skip=%r, frozen=%r)>' % \
                (self.id, self.pessoa_lattes, self.seq_prod, self.dspace_item_id, self.skip, self.frozen)
 
 
@@ -51,7 +51,7 @@ class Revision(Base):
                               foreign_keys=[duplicate_of_id])
 
     def __repr__(self):
-        return '<Revision(id=%s, item=%s, retrieval_time="%s", source="%s", meta=%s, duplicate_of_id=%s)>' % \
+        return '<Revision(id=%r, item=%r, retrieval_time=%r, source=%r, meta=%r, duplicate_of_id=%r)>' % \
                (self.id, self.item, self.retrieval_time, self.source, self.meta, self.duplicate_of_id)
 
 
@@ -64,7 +64,7 @@ class PessoaLattes(Base):
     pessoa_id = Column(BigInteger, ForeignKey('core.pessoa.id'), nullable=False)
 
     def __repr__(self):
-        return '<PessoaLattes(id_cnpq=%s, pessoa_id=%s)>' % \
+        return '<PessoaLattes(id_cnpq=%r, pessoa_id=%r)>' % \
                (self.id_cnpq, self.pessoa_id)
 
 
