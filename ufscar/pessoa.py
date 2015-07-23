@@ -1,4 +1,5 @@
 from sqlalchemy import or_, and_
+from sqlalchemy.orm.exc import NoResultFound
 import db
 
 class PessoaInstituicao(object):
@@ -6,10 +7,13 @@ class PessoaInstituicao(object):
         self.entidade = entidade
     @staticmethod
     def fromIdentificador(cpfOrNumeroUFSCar):
-        return PessoaInstituicao(db.session.query(db.Pessoa).filter(or_(
-                   db.Pessoa.cpf == cpfOrNumeroUFSCar,
-                   db.Pessoa.id  == cpfOrNumeroUFSCar
-               )).one())
+        try:
+            return PessoaInstituicao(db.session.query(db.Pessoa).filter(or_(
+                       db.Pessoa.cpf == cpfOrNumeroUFSCar,
+                       db.Pessoa.id  == cpfOrNumeroUFSCar
+                   )).one())
+        except NoResultFound:
+            return None
     def getEntidade(self):
         """ Entidade a ser inserida na chave estrangeira de PessoaLattes """
         return self.entidade
