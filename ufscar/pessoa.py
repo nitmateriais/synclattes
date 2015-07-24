@@ -19,5 +19,9 @@ class PessoaInstituicao(object):
         return self.entidade
     def getCpf(self):
         return self.entidade.cpf
+    def getNome(self):
+        return self.entidade.nome
+    def getNascimento(self):
+        return self.entidade.data_nascimento.strftime('%d/%m/%Y')
     def getPessoaLattes(self):
         return self.entidade.pessoa_lattes

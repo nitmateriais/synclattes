@@ -345,11 +345,28 @@ def getOrCreatePessoaLattes(pessoa):
     if pessoa.getPessoaLattes() is None:
         cpf = pessoa.getCpf()
         logger.info(u'Obtendo id_cnpq do CPF %s', cpf)
-        id_cnpq = wsCV.obterIdCNPq(cpf)
+        id_cnpq = None
+        try:
+            id_cnpq = wsCV.obterIdCNPq(cpf)
+        except:
+            logger.error(u'Erro ao obter o id_cnpq do CPF %s', cpf)
+            traceback.print_exc()
+
+        if id_cnpq is None:
+            logger.info(u'Obtendo id_cnpq pelo nome e data de nascimento')
+            try:
+                id_cnpq = wsCV.obterIdCNPq(pessoa.getNome(), pessoa.getNascimento())
+            except:
+                logger.error(u'Erro ao obter o id_cnpq pelo nome e nascimento de %r',
+                             pessoa.getEntidade())
+                traceback.print_exc()
+                return None
+
         if id_cnpq is None:
             logger.warning(u'A pessoa %r não possui CV Lattes',
                            pessoa.getEntidade())
             return None
+
         db.session.add(db.PessoaLattes(
             id_cnpq=id_cnpq,
             pessoa=pessoa.getEntidade()
