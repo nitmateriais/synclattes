@@ -1,5 +1,6 @@
 # -*- encoding: utf-8 -*-
 from lxml.builder import ElementMaker
+import util
 
 class CF:
     """ Confidence values """
@@ -18,6 +19,8 @@ class JSONMetadataBuilder(object):
     def add(self, mdschema='dc', element=None, qualifier=None, lang=None, authority=None, confidence=None, value=None, **kwargs):
         if mdschema is None or element is None:
             raise ValueError('Nor mdschema nor element can be null')
+        if util.noneIfEmpty(value) is None:
+            return
         datum = dict(kwargs)
         datum['value'] = value
         if lang is not None:
@@ -26,10 +29,11 @@ class JSONMetadataBuilder(object):
             datum['authority'] = authority
         if confidence is not None:
             datum['confidence'] = confidence
+        if value in {existingDatum['value'] for existingDatum in
+                     self.meta.get(mdschema, {}).get(element, {}).get(qualifier, [])}:
+            return self
         self.meta\
-            .setdefault(mdschema, {})\
-            .setdefault(element, {})\
-            .setdefault(qualifier, [])\
+            .setdefault(mdschema, {}).setdefault(element, {}).setdefault(qualifier, [])\
             .append(datum)
         return self
     def build(self):
@@ -44,6 +48,8 @@ def jsonToXml(json):
     assert(isinstance(json, dict))
     for mdschema, elements in json.iteritems():
         assert(isinstance(elements, dict))
+        if mdschema.startswith('_'):
+            continue
         for element, qualifiers in elements.iteritems():
             assert(isinstance(qualifiers, dict))
             for qualifier, metadata in qualifiers.iteritems():
