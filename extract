@@ -322,11 +322,15 @@ def getOrCreateItem(pessoaLattes, xmlProducao):
 
 def processPerson(pessoa):
     pessoaLattes = getOrCreatePessoaLattes(pessoa)
+    if pessoaLattes is None:
+        return
+
     cv = tryGetCV(pessoaLattes.id_cnpq)
     if cv is None:
         return
-    logger.info('Processando CV de %r', pessoaLattes)
+
     # Processa cada CV em uma transação
+    logger.info('Processando CV de %r', pessoaLattes)
     try:
         CVProcessor(pessoaLattes, cv).run()
         db.session.commit()
@@ -334,14 +338,20 @@ def processPerson(pessoa):
         traceback.print_exc()
         db.session.rollback()
 
+
 wsCV = ws.WSCurriculo()
 
 def getOrCreatePessoaLattes(pessoa):
     if pessoa.getPessoaLattes() is None:
         cpf = pessoa.getCpf()
         logger.info('Obtendo id_cnpq do CPF %s', cpf)
+        id_cnpq = wsCV.obterIdCNPq(cpf)
+        if id_cnpq is None:
+            logger.warning('A pessoa %r não possui CV Lattes',
+                           pessoa.getEntidade())
+            return None
         db.session.add(db.PessoaLattes(
-            id_cnpq=wsCV.obterIdCNPq(cpf),
+            id_cnpq=id_cnpq,
             pessoa=pessoa.getEntidade()
         ))
         db.session.commit()
@@ -358,6 +368,7 @@ def tryGetCV(id_cnpq):
             traceback.print_exc()
         logger.error('Impossível obter CV do id_cnpq %s: %r', id_cnpq, ocorrencia)
     return None
+
 
 def main():
     for line in sys.stdin.xreadlines():
