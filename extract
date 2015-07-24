@@ -37,7 +37,7 @@ class MetadataProcessor(JSONMetadataBuilder):
             # Verifica se algum match foi encontrado
             if len(scoredAutores) == 0 or scoredAutores[0].score == 0:
                 logger.critical(
-                    'Autor não encontrado em sua própria produção! item=%r, autores=%r, scoredAutores=%r',
+                    u'Autor não encontrado em sua própria produção! item=%r, autores=%r, scoredAutores=%r',
                     self.item, autores, scoredAutores
                 )
                 raise MetadataAbortItemException()
@@ -317,7 +317,7 @@ def getOrCreateItem(pessoaLattes, xmlProducao):
         .get_or_create(db.Item, pessoa_lattes=pessoaLattes,
                        seq_prod=MetadataProcessor.getSeqProd(xmlProducao))
     if created:
-        logger.debug('Novo item %r', item)
+        logger.debug(u'Novo item %r', item)
     return item
 
 def processPerson(pessoa):
@@ -330,7 +330,7 @@ def processPerson(pessoa):
         return
 
     # Processa cada CV em uma transação
-    logger.info('Processando CV de %r', pessoaLattes)
+    logger.info(u'Processando CV de %r', pessoaLattes)
     try:
         CVProcessor(pessoaLattes, cv).run()
         db.session.commit()
@@ -344,10 +344,10 @@ wsCV = ws.WSCurriculo()
 def getOrCreatePessoaLattes(pessoa):
     if pessoa.getPessoaLattes() is None:
         cpf = pessoa.getCpf()
-        logger.info('Obtendo id_cnpq do CPF %s', cpf)
+        logger.info(u'Obtendo id_cnpq do CPF %s', cpf)
         id_cnpq = wsCV.obterIdCNPq(cpf)
         if id_cnpq is None:
-            logger.warning('A pessoa %r não possui CV Lattes',
+            logger.warning(u'A pessoa %r não possui CV Lattes',
                            pessoa.getEntidade())
             return None
         db.session.add(db.PessoaLattes(
@@ -366,7 +366,7 @@ def tryGetCV(id_cnpq):
             ocorrencia = wsCV.obterOcorrencia(id_cnpq)
         except:
             traceback.print_exc()
-        logger.error('Impossível obter CV do id_cnpq %s: %r', id_cnpq, ocorrencia)
+        logger.error(u'Impossível obter CV do id_cnpq %s: %r', id_cnpq, ocorrencia)
     return None
 
 
@@ -375,11 +375,11 @@ def main():
         pessoaIdent = util.onlyNumbers(line)
         if pessoaIdent == '':
             if line.strip() != '':
-                logger.warn('Ignorando linha não compreendida: %r', line)
+                logger.warn(u'Ignorando linha não compreendida: %r', line)
             continue
         pessoa = PessoaInstituicao.fromIdentificador(pessoaIdent)
         if pessoa is None:
-            logger.error('Ignorando pessoa não encontrada: %s', pessoaIdent)
+            logger.error(u'Ignorando pessoa não encontrada: %s', pessoaIdent)
         else:
             processPerson(pessoa)
 

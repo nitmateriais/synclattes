@@ -16,5 +16,5 @@ def toUrl(identifier):
         return RESOLVER + '/' + identifier
     if identifier.startswith(RESOLVER + '/10.'):
         return identifier
-    logger.warning('Ignorando DOI inválido: %r', identifier)
+    logger.warning(u'Ignorando DOI inválido: %r', identifier)
     return None
