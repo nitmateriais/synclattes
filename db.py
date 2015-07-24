@@ -15,7 +15,7 @@ class Item(Base):
                       {'schema': 'synclattes'})
 
     id = Column(BigInteger, primary_key=True)
-    id_cnpq = Column(String, ForeignKey('synclattes.pessoa_lattes.id_cnpq'), nullable=False)
+    id_cnpq = Column(String, ForeignKey('synclattes.pessoa_lattes.id_cnpq'), nullable=False, index=True)
     seq_prod = Column(Integer, nullable=False)
     dspace_item_id = Column(BigInteger, nullable=True)
     dspace_cur_rev_id = Column(BigInteger, ForeignKey('synclattes.revision.id'), nullable=True)
@@ -41,9 +41,9 @@ class Revision(Base):
     __table_args__ = {'schema': 'synclattes'}
 
     id = Column(BigInteger, primary_key=True)
-    item_id = Column(BigInteger, ForeignKey('synclattes.item.id'), nullable=False)
+    item_id = Column(BigInteger, ForeignKey('synclattes.item.id'), nullable=False, index=True)
     retrieval_time = Column(DateTime, nullable=False, default=datetime.datetime.utcnow)
-    source = Column(String, nullable=False)
+    source = Column(String, nullable=False, index=True)
     meta = Column(JSONB(none_as_null=True), nullable=True)  # null se o item foi removido
     duplicate_of_id = Column(BigInteger, ForeignKey('synclattes.revision.id'), nullable=True)
 
