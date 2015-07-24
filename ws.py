@@ -14,7 +14,7 @@ class Retry(object):
             for i in xrange(decorator.times):
                 try:
                     return func(*args, **kwargs)
-                except e:
+                except Exception as e:
                     lasterr = e
                     traceback.print_exc(e)
                     time.sleep(decorator.sleeptime)

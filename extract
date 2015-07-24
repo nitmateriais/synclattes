@@ -364,7 +364,7 @@ def tryGetCV(id_cnpq):
         ocorrencia = None
         try:
             ocorrencia = wsCV.obterOcorrencia(id_cnpq)
-        except e:
+        except:
             traceback.print_exc()
         logger.error('Impossível obter CV do id_cnpq %s: %r', id_cnpq, ocorrencia)
     return None
