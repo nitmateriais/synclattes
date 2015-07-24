@@ -13,12 +13,13 @@ logger = logging.getLogger('extract')
 
 class MetadataProcessor(JSONMetadataBuilder):
     def run(self):
+        self._title = None  # para log de mensagens de erro
         return self\
+               .processDadosGerais()\
                .processAutores()\
                .processPalavrasChave()\
                .processAreasConhecimento()\
-               .processSetoresAtividade()\
-               .processDadosGerais()
+               .processSetoresAtividade()
 
     def processAutores(self):
         autores = [MetadataProcessor.xmlToAuthor(autor) for autor in
@@ -37,8 +38,8 @@ class MetadataProcessor(JSONMetadataBuilder):
             # Verifica se algum match foi encontrado
             if len(scoredAutores) == 0 or scoredAutores[0].score == 0:
                 logger.critical(
-                    u'Autor não encontrado em sua própria produção! item=%r, autores=%r, scoredAutores=%r',
-                    self.item, autores, scoredAutores
+                    'Autor não encontrado em sua própria produção! nomeCompleto=%r, nomesEmCitacoes=%r, item=%r, titulo=%r, scoredAutores=%r',
+                    self.cvproc.nomeCompleto, self.cvproc.nomesEmCitacoes, self.item, self._title, scoredAutores
                 )
                 raise MetadataAbortItemException()
             # Define idcnpq para o melhor score
@@ -111,6 +112,7 @@ class MetadataProcessor(JSONMetadataBuilder):
 
         idioma = iso639.lookup(idioma)
         self.add(element='title', lang=idioma, value=titulo)
+        self._title = titulo
         if idioma != 'eng':
             self.add(element='title', lang='eng', value=tituloIngles)
         self.add(element='language', qualifier='iso', value=idioma)
@@ -317,7 +319,7 @@ def getOrCreateItem(pessoaLattes, xmlProducao):
         .get_or_create(db.Item, pessoa_lattes=pessoaLattes,
                        seq_prod=MetadataProcessor.getSeqProd(xmlProducao))
     if created:
-        logger.debug(u'Novo item %r', item)
+        logger.debug('Novo item %r', item)
     return item
 
 def processPerson(pessoa):
@@ -330,7 +332,7 @@ def processPerson(pessoa):
         return
 
     # Processa cada CV em uma transação
-    logger.info(u'Processando CV de %r', pessoaLattes)
+    logger.info('Processando CV de %r', pessoaLattes)
     try:
         CVProcessor(pessoaLattes, cv).run()
         db.session.commit()
@@ -344,26 +346,26 @@ wsCV = ws.WSCurriculo()
 def getOrCreatePessoaLattes(pessoa):
     if pessoa.getPessoaLattes() is None:
         cpf = pessoa.getCpf()
-        logger.info(u'Obtendo id_cnpq do CPF %s', cpf)
+        logger.info('Obtendo id_cnpq do CPF %s', cpf)
         id_cnpq = None
         try:
             id_cnpq = wsCV.obterIdCNPq(cpf)
         except:
-            logger.error(u'Erro ao obter o id_cnpq do CPF %s', cpf)
+            logger.error('Erro ao obter o id_cnpq do CPF %s', cpf)
             traceback.print_exc()
 
         if id_cnpq is None:
-            logger.info(u'Obtendo id_cnpq pelo nome e data de nascimento')
+            logger.info('Obtendo id_cnpq pelo nome e data de nascimento')
             try:
                 id_cnpq = wsCV.obterIdCNPq(pessoa.getNome(), pessoa.getNascimento())
             except:
-                logger.error(u'Erro ao obter o id_cnpq pelo nome e nascimento de %r',
+                logger.error('Erro ao obter o id_cnpq pelo nome e nascimento de %r',
                              pessoa.getEntidade())
                 traceback.print_exc()
                 return None
 
         if id_cnpq is None:
-            logger.warning(u'A pessoa %r não possui CV Lattes',
+            logger.warning('A pessoa %r não possui CV Lattes',
                            pessoa.getEntidade())
             return None
 
@@ -383,7 +385,7 @@ def tryGetCV(id_cnpq):
             ocorrencia = wsCV.obterOcorrencia(id_cnpq)
         except:
             traceback.print_exc()
-        logger.error(u'Impossível obter CV do id_cnpq %s: %r', id_cnpq, ocorrencia)
+        logger.error('Impossível obter CV do id_cnpq %s: %r', id_cnpq, ocorrencia)
     return None
 
 
@@ -392,11 +394,11 @@ def main():
         pessoaIdent = util.onlyNumbers(line)
         if pessoaIdent == '':
             if line.strip() != '':
-                logger.warn(u'Ignorando linha não compreendida: %r', line)
+                logger.warn('Ignorando linha não compreendida: %r', line)
             continue
         pessoa = PessoaInstituicao.fromIdentificador(pessoaIdent)
         if pessoa is None:
-            logger.error(u'Ignorando pessoa não encontrada: %s', pessoaIdent)
+            logger.error('Ignorando pessoa não encontrada: %s', pessoaIdent)
         else:
             processPerson(pessoa)
 
