@@ -1,8 +1,9 @@
 # -*- encoding: utf-8 -*-
-import logging
+import itertools, logging
 
 SCHEME = 'doi:'
 RESOLVER = 'http://dx.doi.org'
+OTHER_RESOLVERS = ['http://doi.acm.org']
 
 logger = logging.getLogger('doiutil')
 
@@ -14,7 +15,8 @@ def toUrl(identifier):
         return RESOLVER + '/' + identifier[len(SCHEME):]
     if identifier.startswith('10.') and '/' in identifier:
         return RESOLVER + '/' + identifier
-    if identifier.startswith(RESOLVER + '/10.'):
-        return identifier
-    logger.warning(u'Ignorando DOI inválido: %r', identifier)
+    for resolver in itertools.chain(OTHER_RESOLVERS, [RESOLVER]):
+        if identifier.startswith(resolver + '/10.'):
+            return identifier
+    logger.warning('Ignorando DOI inválido: %r', identifier)
     return None
