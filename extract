@@ -1,23 +1,24 @@
 #!/usr/bin/python
 # -*- encoding: utf-8 -*-
-import sys, logging, traceback
+import re, sys, logging, traceback
 from collections import namedtuple
 from recordtype import recordtype
 from ufscar.pessoa import PessoaInstituicao
 from metadata import JSONMetadataBuilder, CF
 from conf.dspaceconf import authorityPrefix
-import ws, db, util
+import ws, db, iso639, doiutil, util
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger('extract')
 
-class MetadataAbortItemException(Exception):
-    pass
-
 class MetadataProcessor(JSONMetadataBuilder):
     def run(self):
         return self\
-               .processAutores()
+               .processAutores()\
+               .processPalavrasChave()\
+               .processAreasConhecimento()\
+               .processSetoresAtividade()\
+               .processDadosGerais()
 
     def processAutores(self):
         autores = [MetadataProcessor.xmlToAuthor(autor) for autor in
@@ -26,7 +27,7 @@ class MetadataProcessor(JSONMetadataBuilder):
         myidcnpq = self.cvproc.pessoaLattes.id_cnpq
         confidenceInMyself = CF.UNCERTAIN
         if myidcnpq not in (a.idcnpq for a in autores):
-            # Autor dono do currículo não está marcado no atributo NRO-ID-CNPQ
+            # Autor proprietário do currículo não está marcado no atributo NRO-ID-CNPQ
             # Faz score dos autores que não possuem idcnpq especificado
             STpl = namedtuple('STpl', ['score', 'autor'])
             score = lambda a: \
@@ -62,6 +63,75 @@ class MetadataProcessor(JSONMetadataBuilder):
         return MetadataProcessor.Author(*(util.noneIfEmpty(xml.get(k))
                                           for k in MetadataProcessor.authorAttrs))
 
+    def processPalavrasChave(self):
+        for palavrasChave in self.xml.xpath('PALAVRAS-CHAVE'):
+            for attrname, attrval in sorted(palavrasChave.items()):
+                self.add(element='subject', value=attrval)
+        return self
+
+    def processAreasConhecimento(self):
+        sel = "AREAS-DO-CONHECIMENTO/*[starts-with(name(), 'AREA-DO-CONHECIMENTO')]"
+        for areaConhecimento in self.xml.xpath(sel):
+            nomeArea = [util.noneIfEmpty(areaConhecimento.get(attr)) for attr in
+                        ('NOME-GRANDE-AREA-DO-CONHECIMENTO',
+                         'NOME-DA-AREA-DO-CONHECIMENTO',
+                         'NOME-DA-SUB-AREA-DO-CONHECIMENTO',
+                         'NOME-DA-ESPECIALIDADE')]
+            beautiful = lambda s: ' '.join(word.capitalize() for word in s.split('_'))
+            nomeArea[0] = util.maybeBind(beautiful, nomeArea[0])
+            nomeArea = '. '.join(subNome for subNome in nomeArea if subNome is not None)
+            self.add(element='subject', qualifier='classification', lang='por',
+                     value=nomeArea, _origem='area-conhecimento')
+        return self
+
+    def processSetoresAtividade(self):
+        for setoresAtividade in self.xml.xpath('SETORES-DE-ATIVIDADE'):
+            for attrname, attrval in sorted(setoresAtividade.items()):
+                self.add(element='subject', qualifier='classification', lang='por',
+                         value=attrval, _origem='setor-atividade')
+        return self
+
+    def addDadosGerais(self, doi=None, titulo=None, tituloIngles=None,
+                       ano=None, idioma=None, url=None, relevancia=None,
+                       pubVenue=None, issn=None, isbn=None, citation=None,
+                       **kwargs):
+
+        # Evita erros de digitação nas chamadas
+        assert(len(kwargs) == 0)
+
+        # Trata formato de DOI legado do XML do CV Lattes
+        m = re.search(r'\[doi:([^]]+)\]', url)
+        if m:
+            if doi is None:
+                doi = m.group(1)
+            url = url.replace('[doi:%s]'%doi, '')
+
+        self.add(element='identifier', qualifier='uri',
+                 value=doiutil.toUrl(doi))
+
+        idioma = iso639.lookup(idioma)
+        self.add(element='title', lang=idioma, value=titulo)
+        if idioma != 'eng':
+            self.add(element='title', lang='eng', value=tituloIngles)
+        self.add(element='language', qualifier='iso', value=idioma)
+
+        self.add(element='date', qualifier='issued', value=ano)
+
+        if url is not None:
+            if url.startswith('[') and url.endswith(']'):
+                url = url[1:-1]
+            if url.startswith('http://') or url.startswith('https://'):
+                self.add(element='identifier', qualifier='uri', value=url)
+
+        if relevancia:
+            self.add(mdschema='_lattes', element='relevancia', value=True)
+
+        self.add(element='relation', qualifier='ispartof', value=pubVenue)
+        self.add(element='identifier', qualifier='issn', value=issn)
+        self.add(element='identifier', qualifier='isbn', value=isbn)
+        self.add(element='identifier', qualifier='citation', value=citation)
+        return self
+
     @staticmethod
     def new(cvproc, item, xml):
         return MetadataProcessor.supportedTags[xml.tag](cvproc, item, xml)
@@ -81,14 +151,60 @@ class MetadataProcessor(JSONMetadataBuilder):
 
 class MetadataProcessorArtigo(MetadataProcessor):
     def run(self):
-        super(MetadataProcessorArtigo, self).run()
-        return self
+        self.add(element='type', value='article')
+        return super(MetadataProcessorArtigo, self).run()
+
+    def processDadosGerais(self):
+        b = util.singleTag(self.xml.xpath('DADOS-BASICOS-DO-ARTIGO'))
+        d = util.singleTag(self.xml.xpath('DETALHAMENTO-DO-ARTIGO'))
+
+        ano = b.get('ANO-DO-ARTIGO')
+        pubVenue = d.get('TITULO-DO-PERIODICO-OU-REVISTA')
+
+        return self.addDadosGerais(
+            doi=b.get('DOI'),
+            titulo=b.get('TITULO-DO-ARTIGO'),
+            tituloIngles=b.get('TITULO-DO-ARTIGO-INGLES'),
+            ano=ano,
+            idioma=b.get('IDIOMA'),
+            url=b.get('HOME-PAGE-DO-TRABALHO'),
+            relevancia=b.get('FLAG-RELEVANCIA'),
+            pubVenue=pubVenue,
+            issn=d.get('ISSN'),
+            citation=buildCitation(ano, pubVenue, d),
+        )
 
 
 class MetadataProcessorTrabalhoEventos(MetadataProcessor):
     def run(self):
-        super(MetadataProcessorTrabalhoEventos, self).run()
-        return self
+        self.add(element='type', value='conferenceObject')
+        return super(MetadataProcessorTrabalhoEventos, self).run()
+
+    def processDadosGerais(self):
+        b = util.singleTag(self.xml.xpath('DADOS-BASICOS-DO-TRABALHO'))
+        d = util.singleTag(self.xml.xpath('DETALHAMENTO-DO-TRABALHO'))
+
+        ano = b.get('ANO-DO-TRABALHO')
+        pubVenue = d.get('TITULO-DOS-ANAIS-OU-PROCEEDINGS')
+
+        # Tratamento para TITULO-DOS-ANAIS-OU-PROCEEDINGS
+        # contendo apenas prefixo do livro
+        if re.sub(r'[^a-z]', '', util.norm(pubVenue)) in {'anais', 'proceedings'}:
+            pubVenue = util.noneIfEmpty(d.get('NOME-DO-EVENTO')) \
+                or pubVenue
+
+        return self.addDadosGerais(
+            doi=b.get('DOI'),
+            titulo=b.get('TITULO-DO-TRABALHO'),
+            tituloIngles=b.get('TITULO-DO-TRABALHO-INGLES'),
+            ano=ano,
+            idioma=b.get('IDIOMA'),
+            url=b.get('HOME-PAGE-DO-TRABALHO'),
+            relevancia=b.get('FLAG-RELEVANCIA'),
+            pubVenue=pubVenue,
+            isbn=d.get('ISBN'),
+            citation=buildCitation(ano, pubVenue, d),
+        )
 
 
 MetadataProcessor.supportedTags = {
@@ -98,6 +214,42 @@ MetadataProcessor.supportedTags = {
 
 MetadataProcessor.xpathSel = '|'.join(
     '//'+tag for tag in MetadataProcessor.supportedTags)
+
+
+class MetadataAbortItemException(Exception):
+    pass
+
+
+def buildCitation(ano, pubVenue, xml):
+    ano = util.noneIfEmpty(ano)
+    pubVenue = util.noneIfEmpty(pubVenue)
+
+    xget = lambda k: util.noneIfEmpty(xml.get(k))
+
+    vol = xget('VOLUME')
+    num = xget('FASCICULO')
+    localidade = xget('CIDADE-DA-EDITORA')
+    editora = xget('NOME-DA-EDITORA')
+    pagInicial = xget('PAGINA-INICIAL')
+    pagFinal = xget('PAGINA-FINAL')
+
+    vol = util.maybeBind(lambda s: 'v. '+s, vol)
+    num = util.maybeBind(lambda s: 'n. '+s, num)
+
+    loc_ed = None
+    if localidade and editora:
+        loc_ed = localidade + ': ' + editora
+    else:
+        loc_ed = localidade or editora
+
+    pp = None
+    if pagInicial and pagFinal:
+        pp = 'pp. ' + pagInicial + '-' + pagFinal
+    else:
+        pp = pagInicial or pagFinal
+
+    biblio = [pubVenue, loc_ed, vol, num, pp, ano]
+    return ', '.join(info for info in biblio if info is not None)
 
 
 class CVProcessor(object):
@@ -177,8 +329,7 @@ def processPerson(pessoa):
     # Processa cada CV em uma transação
     try:
         CVProcessor(pessoaLattes, cv).run()
-        #db.session.commit()
-        db.session.rollback()
+        db.session.commit()
     except:
         traceback.print_exc()
         db.session.rollback()
