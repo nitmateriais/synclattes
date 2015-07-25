@@ -1,3 +1,4 @@
+from sqlalchemy import event
 from sqlalchemy.schema import DDLElement
 from sqlalchemy.sql import table
 from sqlalchemy.ext import compiler
@@ -19,13 +20,12 @@ def compile(element, compiler, **kw):
 def compile(element, compiler, **kw):
     return "DROP VIEW %s" % (element.name)
 
-
 def view(name, metadata, selectable):
     t = table(name)
 
     for c in selectable.c:
         c._make_proxy(t)
 
-    CreateView(name, selectable).execute_at('after-create', metadata)
-    DropView(name).execute_at('before-drop', metadata)
+    event.listen(metadata, 'after_create', CreateView(name, selectable).execute_if())
+    event.listen(metadata, 'before_drop', DropView(name).execute_if())
     return t
