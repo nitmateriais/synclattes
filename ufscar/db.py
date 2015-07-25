@@ -6,10 +6,6 @@ from sqlalchemy.orm import relationship, backref
 from dbconn import *
 
 class Pessoa(Base):
-    __tablename__ = 'pessoa'
-    __table_args__ = (UniqueConstraint('cpf'),
-                      {'schema': 'core'})
-
     id = Column(BigInteger, primary_key=True)
     version = Column(BigInteger, nullable=False, default=0)
     cpf = Column(String(255), nullable=True)
@@ -26,6 +22,10 @@ class Pessoa(Base):
     date_created = Column(DateTime, nullable=True)
     last_updated = Column(DateTime, nullable=True)
 
+    __tablename__ = 'pessoa'
+    __table_args__ = (UniqueConstraint(cpf),
+                      {'schema': 'core'})
+
     pessoa_lattes = relationship('PessoaLattes', uselist=False, backref='pessoa')
 
     def __repr__(self):
@@ -34,9 +34,6 @@ class Pessoa(Base):
 
 
 class Vinculo(Base):
-    __tablename__ = 'vinculo'
-    __table_args__ = {'schema': 'core'}
-
     id = Column(BigInteger, primary_key=True)
     version = Column(BigInteger, nullable=False, default=0)
     fim_vinculo = Column(Date, nullable=True)  # null se o vínculo ainda estiver ativo
@@ -48,6 +45,9 @@ class Vinculo(Base):
     date_created = Column(DateTime, nullable=True)
     last_updated = Column(DateTime, nullable=True)
 
+    __tablename__ = 'vinculo'
+    __table_args__ = {'schema': 'core'}
+
     pessoa = relationship('Pessoa', backref='vinculos')
     tipo = relationship('TipoVinculo')
     unidade_organizacional = relationship('UnidadeOrganizacional')
@@ -58,15 +58,15 @@ class Vinculo(Base):
 
 
 class TipoVinculo(Base):
-    __tablename__ = 'tipo_vinculo'
-    __table_args__ = {'schema': 'core'}
-
     id = Column(BigInteger, primary_key=True)
     version = Column(BigInteger, nullable=False, default=0)
     ativo = Column(Boolean, nullable=False)
     descricao = Column(String(255), nullable=False)
     nome = Column(String(255), nullable=False)
     unidade_responsavel_id = Column(BigInteger, ForeignKey('core.unidade_organizacional.id'), nullable=True)
+
+    __tablename__ = 'tipo_vinculo'
+    __table_args__ = {'schema': 'core'}
 
     unidade_responsavel = relationship('UnidadeOrganizacional')
 
@@ -76,10 +76,6 @@ class TipoVinculo(Base):
 
 
 class UnidadeOrganizacional(Base):
-    __tablename__ = 'unidade_organizacional'
-    __table_args__ = (UniqueConstraint('sigla'),
-                      {'schema': 'core'})
-
     id = Column(BigInteger, primary_key=True)
     version = Column(BigInteger, nullable=False, default=0)
     campus_id = Column(BigInteger, nullable=True)  # FK omitida
@@ -93,6 +89,10 @@ class UnidadeOrganizacional(Base):
     portaria_criacao = Column(String(255), nullable=True)
     codigo_siape = Column(BigInteger, nullable=True)
 
+    __tablename__ = 'unidade_organizacional'
+    __table_args__ = (UniqueConstraint(sigla),
+                      {'schema': 'core'})
+
     filhas = relationship('UnidadeOrganizacional', backref=backref('pai', remote_side=[id]),
                           foreign_keys=[pai_id])
 
@@ -104,13 +104,13 @@ class UnidadeOrganizacional(Base):
 
 
 class TipoUnidadeOrganizacional(Base):
-    __tablename__ = 'tipo_unidade_organizacional'
-    __table_args__ = (UniqueConstraint('nome'),
-                      {'schema': 'core'})
-
     id = Column(BigInteger, primary_key=True)
     version = Column(BigInteger, nullable=False, default=0)
     nome = Column(String(255), nullable=False)
+
+    __tablename__ = 'tipo_unidade_organizacional'
+    __table_args__ = (UniqueConstraint(nome),
+                      {'schema': 'core'})
 
     def __repr__(self):
         return '<TipoUnidadeOrganizacional(id=%r, nome=%r)>' % \
