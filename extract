@@ -113,6 +113,9 @@ class MetadataProcessor(JSONMetadataBuilder):
         idioma = iso639.lookup(idioma)
         self.add(element='title', lang=idioma, value=titulo)
         self._title = titulo
+        if util.noneIfEmpty(self._title) is None:
+            logger.critical('Produção sem título! item=%r', self.item)
+            raise MetadataAbortItemException()
         if idioma != 'eng':
             self.add(element='title', lang='eng', value=tituloIngles)
         self.add(element='language', qualifier='iso', value=idioma)
