@@ -1,7 +1,7 @@
 #!/usr/bin/python
 # -*- encoding: utf-8 -*-
 
-from sqlalchemy import Column, ForeignKey, UniqueConstraint, \
+from sqlalchemy import Column, ForeignKey, UniqueConstraint, Index, \
      BigInteger, Integer, String, DateTime, Date, Boolean
 from sqlalchemy.dialects.postgresql import JSONB, ENUM
 from sqlalchemy.orm import relationship, backref
@@ -38,7 +38,6 @@ class Item(Base):
 
 class Revision(Base):
     __tablename__ = 'revision'
-    __table_args__ = {'schema': 'synclattes'}
 
     id = Column(BigInteger, primary_key=True)
     item_id = Column(BigInteger, ForeignKey('synclattes.item.id'), nullable=False, index=True)
@@ -49,6 +48,9 @@ class Revision(Base):
 
     duplicates = relationship('Revision', backref=backref('duplicate_of', remote_side=[id]),
                               foreign_keys=[duplicate_of_id])
+
+    __table_args__ = (Index('uri0_index', meta[('dc','identifier','uri',0,'value')].astext),
+                      {'schema': 'synclattes'})
 
     def __repr__(self):
         return '<Revision(id=%r, item=%r, retrieval_time=%r, source=%r, meta=%r, duplicate_of_id=%r)>' % \
