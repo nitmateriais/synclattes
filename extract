@@ -257,7 +257,7 @@ def buildCitation(ano, pubVenue, xml):
     pp = None
     if pagInicial and pagFinal:
         if pagInicial == pagFinal:
-            pp = 'pp. ' + pagInicial
+            pp = 'p. ' + pagInicial
         else:
             pp = 'pp. ' + pagInicial + '-' + pagFinal
     else:
