@@ -69,7 +69,7 @@ class MetadataProcessor(JSONMetadataBuilder):
             # Nesses casos, escolhe o nome cujas iniciais são mais próximas do nome completo e, como
             # critério de desempate, o maior nome
             _, _, nomecitacao = max((2048 - nameutil.dist(nome, nomecompleto), len(nome), nome)
-                                    for nome in nomecitacao.split(';'))
+                                    for nome in re.split('\s*;\s*', nomecitacao))
         return MetadataProcessor.Author(xget('NRO-ID-CNPQ'), nomecompleto, nomecitacao)
 
     def processPalavrasChave(self):

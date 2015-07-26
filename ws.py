@@ -3,6 +3,7 @@ import time, traceback, base64, io, zipfile
 import suds, suds.client
 from lxml import etree
 import conf.wsconf as wsconf
+import util
 
 
 class Retry(object):
@@ -33,7 +34,7 @@ class WSCurriculo(suds.client.Client):
             return None
         xmlz = zipfile.ZipFile(io.BytesIO(base64.b64decode(b64)))
         xml = xmlz.read(xmlz.namelist()[0])
-        return etree.fromstring(xml)
+        return util.HtmlValuesElementWrapper(etree.fromstring(xml))
 
     @Retry()
     def obterIdCNPq(self, *args):
