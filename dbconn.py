@@ -2,6 +2,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.sql.expression import ClauseElement
 from sqlalchemy.orm import sessionmaker
+from alchemyext.view import RefreshMaterializedView
 import conf.dbconf as dbconf
 
 engine = create_engine(dbconf.url)
@@ -19,6 +20,9 @@ def get_or_create(session, model, defaults=None, **kwargs):
         instance = model(**params)
         session.add(instance)
         return instance, True
+
+def refreshMaterializedView(model):
+    engine.execute(RefreshMaterializedView(model.__table__))
 
 session = Session()
 session.__class__.get_or_create = get_or_create

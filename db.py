@@ -46,8 +46,7 @@ class Revision(Base):
     duplicate_of_id = Column(BigInteger, ForeignKey('synclattes.revision.id'), nullable=True)
 
     __tablename__ = 'revision'
-    __table_args__ = (Index('ix_synclattes_rev_uri0', meta[('dc','identifier','uri',0,'value')].astext),
-                      Index('ix_synclattes_item_id_rev_id', item_id.asc(), id.desc()),
+    __table_args__ = (Index('ix_synclattes_item_id_rev_id', item_id.asc(), id.desc()),
                       {'schema': 'synclattes'})
 
     duplicates = relationship('Revision', backref=backref('duplicate_of', remote_side=[id]),
@@ -60,18 +59,36 @@ class Revision(Base):
 
 class LastRevision(Base):
     __rev = Revision.__table__
-    __table__ = view(
-        'synclattes.last_revision', Base.metadata,
-        sqlalchemy.select([__rev.c.id,
-                           __rev.c.item_id,
-                           __rev.c.retrieval_time,
-                           __rev.c.source,
-                           __rev.c.meta,
-                           __rev.c.duplicate_of_id])\
-        .distinct(__rev.c.item_id)
-        .select_from(__rev)
-        .order_by(__rev.c.item_id.asc(), __rev.c.id.desc())
-    )
+    __table__ = view('last_revision', Base.metadata,
+                     sqlalchemy.select([__rev.c.id,
+                                        __rev.c.item_id,
+                                        __rev.c.retrieval_time,
+                                        __rev.c.source,
+                                        __rev.c.meta,
+                                        __rev.c.duplicate_of_id])\
+                     .distinct(__rev.c.item_id)\
+                     .select_from(__rev)\
+                     .order_by(__rev.c.item_id.asc(), __rev.c.id.desc()),
+                     schema='synclattes',
+                     prefixes=['MATERIALIZED'])
+
+    __indexes__ = [Index('ix_synclattes_last_revision_item_id',
+                         __table__.c.item_id),
+                   Index('ix_synclattes_last_revision_duplicate_of',
+                         __table__.c.duplicate_of_id),
+                   Index('ix_synclattes_last_revision_uri0',
+                         __table__.c.meta[('dc','identifier','uri',0,'value')].astext)]
+
+    item = relationship('Item', uselist=False, backref='last_revision',
+                        foreign_keys=[__table__.c.item_id])
+
+    duplicates = relationship('LastRevision', backref=backref('duplicate_of',
+                                                              remote_side=[__table__.c.id]),
+                              foreign_keys=[__table__.c.duplicate_of_id])
+
+    def __repr__(self):
+        return '<LastRevision(id=%r, item=%r, retrieval_time=%r, source=%r, meta=%r, duplicate_of_id=%r)>' % \
+               (self.id, self.item, self.retrieval_time, self.source, self.meta, self.duplicate_of_id)
 
 
 class PessoaLattes(Base):
@@ -90,4 +107,4 @@ class PessoaLattes(Base):
 if __name__ == '__main__':
     # Se o script for executado diretamente, cria as tabelas
     Base.metadata.create_all(engine)
-    sys.exit(0)
+
