@@ -137,6 +137,13 @@ class MetadataProcessor(JSONMetadataBuilder):
         self.add(element='identifier', qualifier='citation', value=citation)
         return self
 
+    def sanitizeAno(self, ano):
+        if ano == '1900':
+            logger.warning('Item %r contém ano inválido padrão do CV Lattes (1900). Removendo ano.',
+                           self.item)
+            return None
+        return ano
+
     @staticmethod
     def new(cvproc, item, xml):
         return MetadataProcessor.supportedTags[xml.tag](cvproc, item, xml)
@@ -163,7 +170,7 @@ class MetadataProcessorArtigo(MetadataProcessor):
         b = util.singleTag(self.xml.xpath('DADOS-BASICOS-DO-ARTIGO'))
         d = util.singleTag(self.xml.xpath('DETALHAMENTO-DO-ARTIGO'))
 
-        ano = b.get('ANO-DO-ARTIGO')
+        ano = self.sanitizeAno(b.get('ANO-DO-ARTIGO'))
         pubVenue = d.get('TITULO-DO-PERIODICO-OU-REVISTA')
 
         return self.addDadosGerais(
@@ -189,11 +196,7 @@ class MetadataProcessorTrabalhoEventos(MetadataProcessor):
         b = util.singleTag(self.xml.xpath('DADOS-BASICOS-DO-TRABALHO'))
         d = util.singleTag(self.xml.xpath('DETALHAMENTO-DO-TRABALHO'))
 
-        ano = b.get('ANO-DO-TRABALHO')
-        if ano == '1900':
-            logger.warning('Item %r contém ano inválido padrão do CV Lattes (1900). Removendo ano.',
-                           self.item)
-            ano = None
+        ano = self.sanitizeAno(b.get('ANO-DO-TRABALHO'))
         pubVenue = d.get('TITULO-DOS-ANAIS-OU-PROCEEDINGS')
 
         # Tratamento para TITULO-DOS-ANAIS-OU-PROCEEDINGS
@@ -411,6 +414,7 @@ def main():
             logger.error('Ignorando pessoa não encontrada: %s', pessoaIdent)
         else:
             processPerson(pessoa)
+    db.refreshMaterializedView(db.LastRevision)
 
 if __name__ == '__main__':
     main()
