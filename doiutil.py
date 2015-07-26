@@ -17,6 +17,6 @@ def toUrl(identifier):
         return RESOLVER + '/' + identifier
     for resolver in itertools.chain(OTHER_RESOLVERS, [RESOLVER]):
         if identifier.startswith(resolver + '/10.'):
-            return identifier
+            return RESOLVER + identifier[len(resolver):]
     logger.warning('Ignorando DOI inválido: %r', identifier)
     return None
