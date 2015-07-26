@@ -84,6 +84,9 @@ class LastRevision(Base):
     item = relationship('Item', uselist=False, backref='last_revision',
                         foreign_keys=[__table__.c.item_id])
 
+    editable = relationship('Revision', uselist=False, foreign_keys=[__table__.c.id],
+                            primaryjoin=__table__.c.id == Revision.id)
+
     duplicates = relationship('LastRevision', backref=backref('duplicate_of',
                                                               remote_side=[__table__.c.id]),
                               foreign_keys=[__table__.c.duplicate_of_id])
