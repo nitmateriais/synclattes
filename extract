@@ -298,6 +298,9 @@ class CVProcessor(object):
 
     def processProducao(self, xmlProducao):
         item = getOrCreateItem(self.pessoaLattes, xmlProducao)
+        if item.nofetch:  # Flag para impedir extração de um item
+            self.seqProdInCV.add(item.seq_prod)
+            return
         try:
             meta = MetadataProcessor.new(self, item, xmlProducao).run().build()
         except MetadataAbortItemException:

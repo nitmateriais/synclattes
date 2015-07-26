@@ -16,8 +16,8 @@ class Item(Base):
     seq_prod = Column(Integer, nullable=False)
     dspace_item_id = Column(BigInteger, nullable=True)
     dspace_cur_rev_id = Column(BigInteger, ForeignKey('synclattes.revision.id'), nullable=True)
-    skip = Column(Boolean, nullable=False, default=False)
-    frozen = Column(Boolean, nullable=False, default=False)
+    nofetch = Column(Boolean, nullable=False, default=False)  # não recuperar do CV Lattes para o banco
+    nosync = Column(Boolean, nullable=False, default=False)   # não sincronizar do banco com o DSpace
 
     __tablename__ = 'item'
     __table_args__ = (UniqueConstraint(id_cnpq, seq_prod),
@@ -33,8 +33,8 @@ class Item(Base):
                                   foreign_keys=[dspace_cur_rev_id])
 
     def __repr__(self):
-        return '<Item(id=%r, pessoa_lattes=%r, seq_prod=%r, dspace_item_id=%r, skip=%r, frozen=%r)>' % \
-               (self.id, self.pessoa_lattes, self.seq_prod, self.dspace_item_id, self.skip, self.frozen)
+        return '<Item(id=%r, pessoa_lattes=%r, seq_prod=%r, dspace_item_id=%r, nofetch=%r, nosync=%r)>' % \
+               (self.id, self.pessoa_lattes, self.seq_prod, self.dspace_item_id, self.nofetch, self.nosync)
 
 
 class Revision(Base):
