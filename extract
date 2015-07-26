@@ -190,6 +190,10 @@ class MetadataProcessorTrabalhoEventos(MetadataProcessor):
         d = util.singleTag(self.xml.xpath('DETALHAMENTO-DO-TRABALHO'))
 
         ano = b.get('ANO-DO-TRABALHO')
+        if ano == '1900':
+            logger.warning('Item %r contém ano inválido padrão do CV Lattes (1900). Removendo ano.',
+                           self.item)
+            ano = None
         pubVenue = d.get('TITULO-DOS-ANAIS-OU-PROCEEDINGS')
 
         # Tratamento para TITULO-DOS-ANAIS-OU-PROCEEDINGS
@@ -249,7 +253,10 @@ def buildCitation(ano, pubVenue, xml):
 
     pp = None
     if pagInicial and pagFinal:
-        pp = 'pp. ' + pagInicial + '-' + pagFinal
+        if pagInicial == pagFinal:
+            pp = 'pp. ' + pagInicial
+        else:
+            pp = 'pp. ' + pagInicial + '-' + pagFinal
     else:
         pp = pagInicial or pagFinal
 
