@@ -6,7 +6,7 @@ from recordtype import recordtype
 from ufscar.pessoa import PessoaInstituicao
 from metadata import JSONMetadataBuilder, CF
 from conf.dspaceconf import authorityPrefix
-import ws, db, iso639, doiutil, util
+import ws, db, iso639, doiutil, nameutil, util
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger('extract')
@@ -32,11 +32,12 @@ class MetadataProcessor(JSONMetadataBuilder):
             # Faz score dos autores que não possuem idcnpq especificado
             STpl = namedtuple('STpl', ['score', 'autor'])
             score = lambda a: \
-                int(a.nomecompleto == self.cvproc.nomeCompleto) + \
-                int(a.nomecitacao in self.cvproc.nomesEmCitacoes)
+                int(util.norm(a.nomecompleto) == self.cvproc.nomeCompletoNorm) + \
+                int(util.norm(a.nomecitacao) in self.cvproc.nomesEmCitacoesNorm)
             scoredAutores = sorted((STpl(score(a), a) for a in autores if a.idcnpq is None), reverse=True)
             # Verifica se algum match foi encontrado
             if len(scoredAutores) == 0 or scoredAutores[0].score == 0:
+                sys.stdout.flush()
                 logger.critical(
                     'Autor não encontrado em sua própria produção! nomeCompleto=%r, nomesEmCitacoes=%r, item=%r, titulo=%r, scoredAutores=%r',
                     self.cvproc.nomeCompleto, self.cvproc.nomesEmCitacoes, self.item, self._title, scoredAutores
@@ -58,11 +59,18 @@ class MetadataProcessor(JSONMetadataBuilder):
         return self
 
     Author = recordtype('Author', ['idcnpq', 'nomecompleto', 'nomecitacao'])
-    authorAttrs = ('NRO-ID-CNPQ', 'NOME-COMPLETO-DO-AUTOR', 'NOME-PARA-CITACAO')
     @staticmethod
     def xmlToAuthor(xml):
-        return MetadataProcessor.Author(*(util.noneIfEmpty(xml.get(k))
-                                          for k in MetadataProcessor.authorAttrs))
+        xget = lambda k: util.noneIfEmpty(xml.get(k))
+        nomecompleto = xget('NOME-COMPLETO-DO-AUTOR')
+        nomecitacao = xget('NOME-PARA-CITACAO')
+        if nomecitacao is not None and ';' in nomecitacao:
+            # Alguns registros possuem mais de um nome para citação na mesma entrada bibliográfica (!)
+            # Nesses casos, escolhe o nome cujas iniciais são mais próximas do nome completo e, como
+            # critério de desempate, o maior nome
+            _, _, nomecitacao = max((2048 - nameutil.dist(nome, nomecompleto), len(nome), nome)
+                                    for nome in nomecitacao.split(';'))
+        return MetadataProcessor.Author(xget('NRO-ID-CNPQ'), nomecompleto, nomecitacao)
 
     def processPalavrasChave(self):
         for palavrasChave in self.xml.xpath('PALAVRAS-CHAVE'):
@@ -279,6 +287,8 @@ class CVProcessor(object):
         dadosGerais = util.singleTag(self.xmlCV.xpath('//DADOS-GERAIS'))
         self.nomeCompleto = dadosGerais.get('NOME-COMPLETO')
         self.nomesEmCitacoes = {s.strip() for s in dadosGerais.get('NOME-EM-CITACOES-BIBLIOGRAFICAS').split(';')}
+        self.nomeCompletoNorm = util.norm(self.nomeCompleto)
+        self.nomesEmCitacoesNorm = {util.norm(s) for s in self.nomesEmCitacoes}
 
     def run(self):
         seqProdInDB = getItemsProdInDB(self.pessoaLattes)
