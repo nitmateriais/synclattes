@@ -72,7 +72,9 @@ class LastRevision(Base):
                      schema='synclattes',
                      prefixes=['MATERIALIZED'])
 
-    __indexes__ = [Index('ix_synclattes_last_revision_item_id',
+    __indexes__ = [Index('ix_synclattes_last_revision_id',
+                         __table__.c.id),
+                   Index('ix_synclattes_last_revision_item_id',
                          __table__.c.item_id),
                    Index('ix_synclattes_last_revision_duplicate_of',
                          __table__.c.duplicate_of_id),

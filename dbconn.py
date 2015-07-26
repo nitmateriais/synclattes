@@ -21,8 +21,30 @@ def get_or_create(session, model, defaults=None, **kwargs):
         session.add(instance)
         return instance, True
 
-def refreshMaterializedView(model):
+def refresh_materialized_view(model):
     engine.execute(RefreshMaterializedView(model.__table__))
+
+def yield_batches(q, id_field, batch_size=1024, id_from_row=None):
+    """
+    Executes a query `q` by batches of `batch_size` over `id_field`.
+    If the query does not return an ORM object, provide an `id_from_row`
+    function to extract the id field value from the row, e.g.
+    `lambda row: row[0]` for extracting the first field from the row.
+    """
+    curId = 0
+    if id_from_row is None:
+        assert hasattr(id_field, 'key'), \
+               'If function id_from_row is not provided, id_field.key needs to be defined'
+        id_from_row = lambda row: getattr(row, id_field.key)
+    while True:
+        batch = q.filter(id_field > curId)\
+                 .order_by(id_field.asc())\
+                 .limit(batch_size).all()
+        if len(batch) == 0:
+            break
+        for row in batch:
+            yield row
+        curId = id_from_row(batch[-1])
 
 session = Session()
 session.__class__.get_or_create = get_or_create

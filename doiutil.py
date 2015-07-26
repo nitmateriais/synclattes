@@ -20,3 +20,9 @@ def toUrl(identifier):
             return RESOLVER + identifier[len(resolver):]
     logger.warning('Ignorando DOI inválido: %r', identifier)
     return None
+
+def fromUrl(identifier):
+    url = toUrl(identifier)
+    if url is None:
+        return None
+    return url[len(RESOLVER)+1:]
