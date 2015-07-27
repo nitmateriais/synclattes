@@ -1,6 +1,6 @@
 #!/usr/bin/python
 # -*- encoding: utf-8 -*-
-import tempfile, logging
+import os, shutil, atexit, tempfile, logging
 import simstring
 import db, dbutil, doiutil, nameutil, util
 
@@ -55,7 +55,10 @@ def deduplicateDoi():
 
 def deduplicateTitle():
     populateTitleTempTable()
-    pass
+    ssdb = populateSimStringDB()
+    ssdb.measure = simstring.jaccard
+    ssdb.threshold = 0.5
+    return ssdb
 
 def populateTitleTempTable():
     logger.info('Indexando versões exatas dos títulos normalizados')
@@ -68,7 +71,8 @@ def populateTitleTempTable():
 
     batch_size = 16384
     i = 0
-    g = dbutil.yieldNotYetSyncedRevisions(q, batch_size=batch_size, id_from_row=lambda row:row[0])
+    g = db.yield_batches(q, db.LastRevision.item_id, batch_size=batch_size,
+                         id_from_row=lambda row:row[0])
     for item_id, title in g:
         db.session.add(db.RevNormTitle(id = item_id, title = util.norm(title)))
         i += 1
@@ -76,6 +80,23 @@ def populateTitleTempTable():
             db.session.commit()
             logger.info('Indexados %r itens', i)
     db.session.commit()
+
+def populateSimStringDB():
+    tempdir = tempfile.mkdtemp()
+    atexit.register(lambda: shutil.rmtree(tempdir))
+    filename = os.path.join(tempdir, 'title.db')
+
+    ssdb = simstring.writer(filename)
+    g = db.yield_batches(db.session.query(db.RevNormTitle),
+                         db.RevNormTitle.id,
+                         batch_size=16384)
+    for result in g:
+        ssdb.insert(result.title.encode('utf-8'))
+    ssdb.close()
+
+    ssdb = simstring.reader(filename)
+    atexit.register(ssdb.close)
+    return ssdb
 
 def main():
     deduplicateDoi()
