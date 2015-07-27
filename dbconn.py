@@ -1,3 +1,4 @@
+# -*- encoding: utf-8 -*-
 from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.sql.expression import ClauseElement
@@ -21,7 +22,13 @@ def get_or_create(session, model, defaults=None, **kwargs):
         session.add(instance)
         return instance, True
 
-def refresh_materialized_view(model):
+def refresh_materialized_view(session, model):
+    """
+    Atualiza os dados de uma MATERIALIZED VIEW.
+
+    Importante: A transação atual é commitada antes de realizar a operação.
+    """
+    session.commit()
     engine.execute(RefreshMaterializedView(model.__table__))
 
 def yield_batches(q, id_field, batch_size=1024, id_from_row=None):
@@ -48,4 +55,4 @@ def yield_batches(q, id_field, batch_size=1024, id_from_row=None):
 
 session = Session()
 session.__class__.get_or_create = get_or_create
-
+session.__class__.refresh_materialized_view = refresh_materialized_view

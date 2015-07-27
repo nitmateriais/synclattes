@@ -1,4 +1,66 @@
 #!/usr/bin/python
 # -*- encoding: utf-8 -*-
-import db, doiutil, nameutil, util
+import tempfile, logging
+import simstring
+from metadata import JSONMetadataWrapper
+import db, dbutil, doiutil, nameutil, util
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger('deduplicate')
+
+def merge(revisions):
+    """ Junta uma lista de revisões, indicando que são duplicatas """
+    if len(revisions) < 2:
+        # Juntar menos de 2 revisões é uma operação nula
+        return
+    # Por padrão, define a primeira revisão como a principal.
+    # A tarefa de escolher a melhor revisão é delegada para o próximo script.
+    mainId = revisions[0].id
+    # Mantém a revisão principal existente, se houver
+    for rev in revisions:
+        if rev.duplicate_of_id:
+            mainId = rev.duplicate_of_id
+            break
+        if rev.item.dspace_cur_rev_id:
+            mainId = rev.id
+            break
+    # Modifica o campo de todas as revisões, tirando a principal
+    for rev in revisions:
+        assert(isinstance(rev, db.Revision))  # evita uso acidental de LastRevision, que é readonly
+        if rev.id != mainId:
+            db.session.add(rev)
+            rev.duplicate_of_id = mainId
+    db.session.commit()
+
+def deduplicateDoi():
+    meta_uri0 = db.LastRevision.meta[('dc','identifier','uri',0,'value')].astext
+
+    q = db.session.query(db.LastRevision.item_id, meta_uri0)\
+                  .join(db.LastRevision.item)\
+                  .filter(db.LastRevision.duplicate_of_id.is_(None))
+
+    g = dbutil.yieldNotYetSyncedRevisions(q, id_from_row=lambda row:row[0])
+    for item_id, uri in g:
+        doi = doiutil.filter(uri)
+        if doi:
+            # Busca duplicatas por DOI idêntico
+            duplicates = db.session.query(db.Revision)\
+                                   .join(db.Revision.last_revision)\
+                                   .filter(db.func.lower(meta_uri0) == doi.lower()).all()
+            if len(duplicates) >= 2:
+                logger.info('Encontradas %d duplicatas do item.id=%r pelo DOI %r',
+                            len(duplicates), item_id, doi)
+                merge(duplicates)
+
+    db.session.refresh_materialized_view(db.LastRevision)
+
+def deduplicateTitle():
+    pass
+
+def main():
+    deduplicateDoi()
+    deduplicateTitle()
+
+if __name__ == '__main__':
+    main()
 

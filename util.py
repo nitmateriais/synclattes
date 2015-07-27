@@ -76,6 +76,12 @@ def noneIfEmpty(s):
         return None
     return s
 
+def firstOrNone(a):
+    if a is not None:
+        for x in a:
+            return x
+    return None
+
 def maybeBind(f, value):
     """ Operador de bind no monad Maybe, onde Nothing é representado por None """
     if value is None:

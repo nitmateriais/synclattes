@@ -21,8 +21,8 @@ def toUrl(identifier):
     logger.warning('Ignorando DOI inválido: %r', identifier)
     return None
 
-def fromUrl(identifier):
-    url = toUrl(identifier)
-    if url is None:
+def filter(url):
+    """ Retorna None se `url` não for um endereço de DOI válido e oficial """
+    if url is None or not url.startswith(RESOLVER + '/10.'):
         return None
-    return url[len(RESOLVER)+1:]
+    return url

@@ -5,6 +5,7 @@ from sqlalchemy import Column, ForeignKey, UniqueConstraint, Index, \
      BigInteger, Integer, String, DateTime, Date, Boolean
 from sqlalchemy.dialects.postgresql import JSONB, ENUM
 from sqlalchemy.orm import relationship, backref
+from sqlalchemy import func
 import sys, datetime
 from alchemyext.view import view
 from dbconn import *
@@ -66,9 +67,9 @@ class LastRevision(Base):
                                         __rev.c.source,
                                         __rev.c.meta,
                                         __rev.c.duplicate_of_id])\
-                     .distinct(__rev.c.item_id)\
-                     .select_from(__rev)\
-                     .order_by(__rev.c.item_id.asc(), __rev.c.id.desc()),
+                               .distinct(__rev.c.item_id)\
+                               .select_from(__rev)\
+                               .order_by(__rev.c.item_id.asc(), __rev.c.id.desc()),
                      schema='synclattes',
                      prefixes=['MATERIALIZED'])
 
@@ -79,12 +80,13 @@ class LastRevision(Base):
                    Index('ix_synclattes_last_revision_duplicate_of',
                          __table__.c.duplicate_of_id),
                    Index('ix_synclattes_last_revision_uri0',
-                         __table__.c.meta[('dc','identifier','uri',0,'value')].astext)]
+                         func.lower(__table__.c.meta[('dc','identifier','uri',0,'value')].astext))]
 
     item = relationship('Item', uselist=False, backref='last_revision',
                         foreign_keys=[__table__.c.item_id])
 
-    editable = relationship('Revision', uselist=False, foreign_keys=[__table__.c.id],
+    editable = relationship('Revision', uselist=False, backref='last_revision',
+                            foreign_keys=[__table__.c.id],
                             primaryjoin=__table__.c.id == Revision.id)
 
     duplicates = relationship('LastRevision', backref=backref('duplicate_of',

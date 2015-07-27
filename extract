@@ -427,7 +427,7 @@ def main():
             logger.error('Ignorando pessoa não encontrada: %s', pessoaIdent)
         else:
             processPerson(pessoa)
-    db.refresh_materialized_view(db.LastRevision)
+    db.session.refresh_materialized_view(db.LastRevision)
 
 if __name__ == '__main__':
     main()
