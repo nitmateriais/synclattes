@@ -82,7 +82,7 @@ class LastRevision(Base):
                    Index('ix_synclattes_last_revision_uri0',
                          func.lower(__table__.c.meta[('dc','identifier','uri',0,'value')].astext))]
 
-    item = relationship('Item', uselist=False, backref='last_revision',
+    item = relationship('Item', uselist=False, backref=backref('last_revision', uselist=False),
                         foreign_keys=[__table__.c.item_id])
 
     editable = relationship('Revision', uselist=False, backref='last_revision',

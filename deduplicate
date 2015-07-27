@@ -12,16 +12,18 @@ def merge(revisions):
     if len(revisions) < 2:
         # Juntar menos de 2 revisões é uma operação nula
         return
-    # Por padrão, define a primeira revisão como a principal.
+    # Por padrão, define a primeira revisão da lista como a principal.
     # A tarefa de escolher a melhor revisão é delegada para o próximo script.
     mainId = revisions[0].id
-    # Mantém a revisão principal existente, se houver
+    # Mantém a revisão do item principal existente, se houver
     for rev in revisions:
         if rev.duplicate_of_id:
-            mainId = rev.duplicate_of_id
-            break
-        if rev.item.dspace_cur_rev_id:
-            mainId = rev.id
+            # Escolhe a última revisão do item. Caso o item não tenha sido
+            # modificado no CV Lattes desde a última sincronização, essa
+            # revisão é a mesma que a rev.duplicate_of_id. Caso o item principal
+            # tenha sido modificado, ainda assim é seguro utilizar a última revisão
+            # do mesmo, pois esta será varrida pelo yieldNotYetSyncedRevisions
+            mainId = rev.duplicate_of.item.last_revision.id
             break
     # Modifica o campo de todas as revisões, tirando a principal
     for rev in revisions:
@@ -82,6 +84,8 @@ def populateTitleTempTable():
     db.session.commit()
 
 def populateSimStringDB():
+    logger.info('Criando índice de busca de similares com o simstring')
+
     tempdir = tempfile.mkdtemp()
     atexit.register(lambda: shutil.rmtree(tempdir))
     filename = os.path.join(tempdir, 'title.db')
@@ -91,7 +95,7 @@ def populateSimStringDB():
                          db.RevNormTitle.id,
                          batch_size=16384)
     for result in g:
-        ssdb.insert(result.title.encode('utf-8'))
+        ssdb.insert(result.title.encode('ascii'))
     ssdb.close()
 
     ssdb = simstring.reader(filename)
