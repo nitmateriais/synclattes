@@ -31,6 +31,9 @@ def refresh_materialized_view(session, model):
     session.commit()
     engine.execute(RefreshMaterializedView(model.__table__))
 
+def create_temp_table(model):
+    model.__table__.create(bind = engine)
+
 def yield_batches(q, id_field, batch_size=1024, id_from_row=None):
     """
     Executes a query `q` by batches of `batch_size` over `id_field`.

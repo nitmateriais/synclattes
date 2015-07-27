@@ -2,7 +2,6 @@
 # -*- encoding: utf-8 -*-
 import tempfile, logging
 import simstring
-from metadata import JSONMetadataWrapper
 import db, dbutil, doiutil, nameutil, util
 
 logging.basicConfig(level=logging.INFO)
@@ -39,7 +38,7 @@ def deduplicateDoi():
                   .join(db.LastRevision.item)\
                   .filter(db.LastRevision.duplicate_of_id.is_(None))
 
-    g = dbutil.yieldNotYetSyncedRevisions(q, id_from_row=lambda row:row[0])
+    g = dbutil.yieldNotYetSyncedRevisions(q, batch_size=16384, id_from_row=lambda row:row[0])
     for item_id, uri in g:
         doi = doiutil.filter(uri)
         if doi:
@@ -55,7 +54,28 @@ def deduplicateDoi():
     db.session.refresh_materialized_view(db.LastRevision)
 
 def deduplicateTitle():
+    populateTitleTempTable()
     pass
+
+def populateTitleTempTable():
+    logger.info('Indexando versões exatas dos títulos normalizados')
+
+    db.create_temp_table(db.RevNormTitle)
+    meta_title = db.LastRevision.meta[('dc','title','""',0,'value')].astext
+
+    q = db.session.query(db.LastRevision.item_id, meta_title)\
+                  .join(db.LastRevision.item)
+
+    batch_size = 16384
+    i = 0
+    g = dbutil.yieldNotYetSyncedRevisions(q, batch_size=batch_size, id_from_row=lambda row:row[0])
+    for item_id, title in g:
+        db.session.add(db.RevNormTitle(id = item_id, title = util.norm(title)))
+        i += 1
+        if i % batch_size == 0:
+            db.session.commit()
+            logger.info('Indexados %r itens', i)
+    db.session.commit()
 
 def main():
     deduplicateDoi()

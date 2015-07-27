@@ -110,6 +110,17 @@ class PessoaLattes(Base):
         return '<PessoaLattes(id_cnpq=%r, pessoa_id=%r)>' % \
                (self.id_cnpq, self.pessoa_id)
 
+class RevNormTitle(Base):
+    id = Column(BigInteger, primary_key=True, autoincrement=False)
+    title = Column(String, nullable=False)
+
+    __tablename__ = 'revision_normalized_title'
+    __table_args__ = (Index('ix_temp_rev_norm_title', title),
+                      {'prefixes': ['TEMPORARY']})
+
+    def __repr__(self):
+        return '<RevNormTitle(id=%r, title=%r)>' % \
+               (self.id, self.title)
 
 if __name__ == '__main__':
     # Se o script for executado diretamente, cria as tabelas
