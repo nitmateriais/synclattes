@@ -3,6 +3,7 @@
 import os, shutil, atexit, tempfile, logging
 import simstring
 import db, dbutil, doiutil, nameutil, util
+import conf.dedupconf as dedupconf
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger('deduplicate')
@@ -56,51 +57,88 @@ def deduplicateDoi():
     db.session.refresh_materialized_view(db.LastRevision)
 
 def deduplicateTitle():
-    populateTitleTempTable()
-    ssdb = populateSimStringDB()
-    ssdb.measure = simstring.jaccard
-    ssdb.threshold = 0.5
-    return ssdb
+    simInq = SimilarTitleInquirer()
+    # TODO: Lembrar de tratar os seguintes casos:
+    #   - Se duplicatas encontradas possuírem DOIs diferentes, utilizar apenas o com melhor ranking
+    #   - Não considerar duplicatas se estiverem no mesmo CV
 
-def populateTitleTempTable():
-    logger.info('Indexando versões exatas dos títulos normalizados')
+class SimilarTitleInquirer(object):
+    _instance = None  # Singleton
+    def __new__(klass, *args, **kwargs):
+        if not klass._instance:
+            klass._instance = super(SimilarTitleInquirer, klass).__new__(klass, *args, **kwargs)
+            klass._instance._populateTitleTempTable()
+            klass._instance._populateSimStringDB()
+        return klass._instance
 
-    db.create_temp_table(db.RevNormTitle)
-    meta_title = db.LastRevision.meta[('dc','title','""',0,'value')].astext
+    def __del__(self):
+        self.ssdb.close()
 
-    q = db.session.query(db.LastRevision.item_id, meta_title)\
-                  .join(db.LastRevision.item)
+    def query(self, title):
+        """
+        Procura títulos similares a `title`
 
-    batch_size = 16384
-    i = 0
-    g = db.yield_batches(q, db.LastRevision.item_id, batch_size=batch_size,
-                         id_from_row=lambda row:row[0])
-    for item_id, title in g:
-        db.session.add(db.RevNormTitle(id = item_id, title = util.norm(title)))
-        i += 1
-        if i % batch_size == 0:
-            db.session.commit()
-            logger.info('Indexados %r itens', i)
-    db.session.commit()
+        Retorna uma lista rankeada no formato:
+        [(distancia1, [revisao1, revisao2, ..., revisaoN]),
+         (distancia2, [revisaoN+1, revisaoN+2, ..., revisaoM]),
+         ...]
+        """
+        title = util.norm(title).encode('ascii')
+        similarTitles = set(self.ssdb.retrieve(title))
+        similarTitles.add(title)
+        # Rankeia os títulos similares encontrados de acordo com a distância Levenshtein
+        rankedTitles = sorted([(nameutil.levenshtein(title, s), s) for s in similarTitles])
+        # Obtém as revisões correspondentes a cada um desses títulos
+        # Note que, no caso de as duplicatas possuírem título normalizado exatamente igual,
+        # é possível existir mais de uma revisão com o mesmo título
+        results = [(dist, db.session.query(db.LastRevision)
+                                    .join((db.RevNormTitle, db.RevNormTitle.id == db.LastRevision.id))
+                                    .filter(db.RevNormTitle.title == title).all())
+                   for (dist, title) in rankedTitles]
+        # Retorna apenas resultados não-vazios
+        return [(dist, revisions) for (dist, revisions) in results
+                if len(revisions) > 0]
 
-def populateSimStringDB():
-    logger.info('Criando índice de busca de similares com o simstring')
+    def _populateTitleTempTable(self):
+        logger.info('Indexando versões exatas dos títulos normalizados')
 
-    tempdir = tempfile.mkdtemp()
-    atexit.register(lambda: shutil.rmtree(tempdir))
-    filename = os.path.join(tempdir, 'title.db')
+        db.create_temp_table(db.RevNormTitle)
+        meta_title = db.LastRevision.meta[('dc','title','""',0,'value')].astext
 
-    ssdb = simstring.writer(filename)
-    g = db.yield_batches(db.session.query(db.RevNormTitle),
-                         db.RevNormTitle.id,
-                         batch_size=16384)
-    for result in g:
-        ssdb.insert(result.title.encode('ascii'))
-    ssdb.close()
+        q = db.session.query(db.LastRevision.item_id, meta_title)\
+                      .join(db.LastRevision.item)\
+                      .filter(meta_title.isnot(None))
 
-    ssdb = simstring.reader(filename)
-    atexit.register(ssdb.close)
-    return ssdb
+        batch_size = 16384
+        i = 0
+        g = db.yield_batches(q, db.LastRevision.item_id, batch_size=batch_size,
+                             id_from_row=lambda row:row[0])
+        for item_id, title in g:
+            db.session.add(db.RevNormTitle(id = item_id, title = util.norm(title)))
+            i += 1
+            if i % batch_size == 0:
+                db.session.commit()
+                logger.info('Indexados %r itens', i)
+        db.session.commit()
+
+    def _populateSimStringDB(self):
+        logger.info('Criando índice de busca de similares com o simstring')
+
+        tempdir = tempfile.mkdtemp()
+        atexit.register(lambda: shutil.rmtree(tempdir))
+        filename = os.path.join(tempdir, 'title.db')
+
+        ssdb = simstring.writer(filename)
+        g = db.yield_batches(db.session.query(db.RevNormTitle),
+                             db.RevNormTitle.id,
+                             batch_size=16384)
+        for result in g:
+            ssdb.insert(result.title.encode('ascii'))
+        ssdb.close()
+
+        self.ssdb = simstring.reader(filename)
+        self.ssdb.measure = dedupconf.titleMeasure
+        self.ssdb.threshold = dedupconf.titleThreshold
 
 def main():
     deduplicateDoi()
