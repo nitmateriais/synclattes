@@ -93,7 +93,6 @@ class TitleDeduplicator(object):
                                              .filter(db.LastRevision.item_id == item_id).scalar())
         doi = maybeLower(meta.getDoi())
         prodType = meta.getType()
-        #authors = meta.get('dc.contributor.author', what=None)
 
         noMoreIterations = False
         visitedCVs = set()
@@ -142,11 +141,30 @@ class TitleDeduplicator(object):
             # Otimização: nada a fazer caso não tenham sido encontrados outros candidatos
             return
 
-        logger.info('[%s]:Encontrados %d candidatos para o título %r',
-                    self.percent(), len(candidates), title)
-        #duplicates = []
-        #for rev in candidates:
-        #    pass
+        # Verifica se os candidatos foram publicados no mesmo ano, e se o conjunto de autores
+        # possui similaridade suficiente para considerar como a mesma publicação
+        duplicates = []
+        year = meta.getYear()
+        authorSet = nameutil.AuthorSet.toAuthorSet(meta.get('dc.contributor.author', what=None))
+        for rev in candidates:
+            curMeta = JSONMetadataWrapper(rev.meta)
+            curYear = curMeta.getYear()
+            if dedupconf.ensurePublishedSameYear and curYear and year and curYear != year:
+                logger.info('Item %r rejeitado como duplicada de %r: ano %r vs ano %r',
+                            rev.item_id, item_id, curYear, year)
+                continue
+            curAuthors = curMeta.get('dc.contributor.author', what=None)
+            curAuthorSet = nameutil.AuthorSet.toAuthorSet(curAuthors)
+            authorSetDist = authorSet.compare(curAuthorSet)
+            if authorSetDist > dedupconf.authorThreshold:
+                logger.info('Item %r rejeitado como duplicata de %r: distância entre autores = %.2f',
+                            rev.item_id, item_id, authorSetDist)
+                continue
+            duplicates.append(rev.editable)
+
+        logger.info('[%s]:Encontradas %d duplicatas para o item %r',
+            self.percent(), len(duplicates), item_id)
+        merge(duplicates)
 
 
 def yieldItemIdMeta(metaExpr, batch_size=16384, only_count=False):

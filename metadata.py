@@ -1,4 +1,5 @@
 # -*- encoding: utf-8 -*-
+import re
 from lxml.builder import ElementMaker
 import doiutil, util
 
@@ -103,14 +104,26 @@ class JSONMetadataWrapper(object):
             return meta
         return [datum[what] for datum in meta]
 
+    def getSingle(self, k, what='value'):
+        """
+        Retorna o primeiro metadado encontrado com a chave `k`.
+        """
+        return util.firstOrNone(self.get(k, what='value'))
+
     def getDoi(self):
-        return doiutil.filter(util.firstOrNone(self.get('dc.identifier.uri')))
+        return doiutil.filter(self.getSingle('dc.identifier.uri'))
 
     def getTitle(self):
-        return util.firstOrNone(self.get('dc.title'))
+        return self.getSingle('dc.title')
 
     def getType(self):
-        return util.firstOrNone(self.get('dc.type'))
+        return self.getSingle('dc.type')
+
+    def getYear(self):
+        dateIssued = self.getSingle('dc.date.issued')
+        if dateIssued is None or not re.match(r'^\d{4}$', dateIssued):
+            return None
+        return dateIssued
 
     def toXml(json):
         nsmap = {'atom': 'http://www.w3.org/2005/Atom',
