@@ -96,6 +96,13 @@ def firstOrNone(a):
             return x
     return None
 
+def uniq(seq):
+    """ Remove duplicatas da sequência, preservando a ordem """
+    # http://stackoverflow.com/a/480227
+    seen = set()
+    seen_add = seen.add
+    return [ x for x in seq if not (x in seen or seen_add(x))]
+
 def maybeBind(f, value):
     """ Operador de bind no monad Maybe, onde Nothing é representado por None """
     if value is None:
