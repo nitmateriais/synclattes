@@ -266,7 +266,7 @@ class SimilarTitleInquirer(object):
         atexit.register(lambda: shutil.rmtree(tempdir))
         filename = os.path.join(tempdir, 'title.db')
 
-        ssdb = simstring.writer(filename)
+        ssdb = simstring.writer(filename, dedupconf.titleNGram, dedupconf.titleBE)
         g = db.yield_batches(db.session.query(db.RevNormTitle),
                              db.RevNormTitle.id,
                              batch_size=16384)
