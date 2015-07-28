@@ -21,7 +21,7 @@ class CF:
 #    possível utilizar None, pois valores nulos não são permitidos como chave de
 #    dicionários na especificação do JSON.
 #  * Valores de `mdschema` iniciados em `_` são ignorados na conversão para XML.
-#  * Valores de `attr` iniciados em `_` são ignorados quando na conversão para XML.
+#  * Valores de `attr` iniciados em `_` são ignorados na conversão para XML.
 #
 # Formato do metadado após conversão para XML:
 # <dim:field mdschema="`mdschema`"
@@ -32,8 +32,9 @@ class CF:
 # </dim:field>
 #
 class JSONMetadataBuilder(object):
-    def __init__(self, meta={}):
-        self.meta = dict(meta)
+    def __init__(self):
+        self.meta = {}
+        self.shadow = {}  # cópia sombra em sets, para eliminação de metadados duplicados
     def add(self, mdschema='dc', element=None, qualifier=None, lang=None, authority=None, confidence=None, value=None, **kwargs):
         """
         Adiciona um metadado
@@ -69,12 +70,17 @@ class JSONMetadataBuilder(object):
             datum['authority'] = authority
         if confidence is not None:
             datum['confidence'] = confidence
-        if value in {existingDatum['value'] for existingDatum in
-                     self.meta.get(mdschema, {}).get(element, {}).get(qualifier, [])}:
+        # Verifica se já existe no conjunto de metadados com o mesmo valor e mesma chave de autoridade
+        if (value, authority) in self.shadow.get(mdschema, {}).get(element, {}).get(qualifier, set()):
             return self
+        # Adiciona metadado (em uma lista, para preservar a ordem)
         self.meta\
             .setdefault(mdschema, {}).setdefault(element, {}).setdefault(qualifier, [])\
             .append(datum)
+        # Adiciona cópia sombra em um set
+        self.shadow\
+            .setdefault(mdschema, {}).setdefault(element, {}).setdefault(qualifier, set())\
+            .add((value, authority))
         return self
     def build(self):
         return self.meta

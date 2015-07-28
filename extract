@@ -39,7 +39,8 @@ class MetadataProcessor(JSONMetadataBuilder):
             scoredAutores = sorted((STpl(score(a), a) for a in autores if a.idcnpq is None), reverse=True)
             # Verifica se algum match foi encontrado
             if len(scoredAutores) == 0 or scoredAutores[0].score == 0:
-                sys.stdout.flush()
+                # A ideia é que este script garanta que pelo menos o autor proprietário do CV esteja marcado
+                # nos metadados extraídos, para balizar as etapas posteriores de processamento
                 logger.critical(
                     'Autor não encontrado em sua própria produção! nomeCompleto=%r, nomesEmCitacoes=%r, item=%r, titulo=%r, scoredAutores=%r',
                     self.cvproc.nomeCompleto, self.cvproc.nomesEmCitacoes, self.item, self._title, scoredAutores
