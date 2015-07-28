@@ -1,6 +1,6 @@
 # -*- encoding: utf-8 -*-
 from lxml.builder import ElementMaker
-import util
+import doiutil, util
 
 class CF:
     """ Valores canônicos de confiança """
@@ -92,11 +92,19 @@ class JSONMetadataWrapper(object):
         meta = self.json
         for subk in path[:2]:
             meta = meta.get(subk, {})
-        for subk in path[2:]:
-            meta = meta.get(subk, [])
+        meta = meta.get(path[2] if len(path)==3 else '', [])
         if what is None:
             return meta
         return [datum[what] for datum in meta]
+
+    def getDoi(self):
+        return doiutil.filter(util.firstOrNone(self.get('dc.identifier.uri')))
+
+    def getTitle(self):
+        return util.firstOrNone(self.get('dc.title'))
+
+    def getType(self):
+        return util.firstOrNone(self.get('dc.type'))
 
     def toXml(json):
         nsmap = {'atom': 'http://www.w3.org/2005/Atom',

@@ -77,6 +77,7 @@ def noneIfEmpty(s):
     return s
 
 def firstOrNone(a):
+    """ Retorna o primeiro elemento de `a`. Se este não existir, retorna None. """
     if a is not None:
         for x in a:
             return x
@@ -87,3 +88,16 @@ def maybeBind(f, value):
     if value is None:
         return None
     return f(value)
+
+def isRomanNumeral(s):
+    """ Verifica se a string é um numeral romano """
+    # http://stackoverflow.com/a/267405
+    if noneIfEmpty(s) is None:
+        return False
+    return bool(re.match(r'^M{0,4}(CM|CD|D?C{0,3})(XC|XL|L?X{0,3})(IX|IV|V?I{0,3})$', s))
+
+def isArabicNumeral(s):
+    """ Verifica se a string é um numeral arábico """
+    if noneIfEmpty(s) is None:
+        return False
+    return bool(re.match(r'^\d+$', s))

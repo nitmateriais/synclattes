@@ -483,5 +483,5 @@ if __name__ == '__main__':
     # Verifica consistência da tabela
     import re
     for k, v in lattesToISO639.iteritems():
-        assert(k == util.norm(k))       # sem acentos
-        assert(re.match('[a-z]{3}', v)) # 3 letras
+        assert(k == util.norm(k))         # sem acentos
+        assert(re.match('^[a-z]{3}$', v)) # 3 letras

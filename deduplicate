@@ -1,17 +1,25 @@
 #!/usr/bin/python
 # -*- encoding: utf-8 -*-
-import os, shutil, atexit, tempfile, logging
+import os, re, shutil, atexit, tempfile, logging
 import simstring
+from sqlalchemy import or_
+from metadata import JSONMetadataWrapper
 import db, dbutil, doiutil, nameutil, util
 import conf.dedupconf as dedupconf
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger('deduplicate')
 
+
+# Expressões reutilizáveis em queries SQL
+meta_uri0  = db.LastRevision.meta[('dc','identifier','uri',0,'value')].astext
+meta_title = db.LastRevision.meta[('dc','title','""',0,'value')].astext
+
+
 def merge(revisions):
-    """ Junta uma lista de revisões, indicando que são duplicatas """
+    """ Mescla uma lista de revisões, indicando que são duplicatas """
     if len(revisions) < 2:
-        # Juntar menos de 2 revisões é uma operação nula
+        # Mesclar menos de 2 revisões é uma operação nula
         return
     # Por padrão, define a primeira revisão da lista como a principal.
     # A tarefa de escolher a melhor revisão é delegada para o próximo script.
@@ -34,33 +42,146 @@ def merge(revisions):
             rev.duplicate_of_id = mainId
     db.session.commit()
 
-def deduplicateDoi():
-    meta_uri0 = db.LastRevision.meta[('dc','identifier','uri',0,'value')].astext
 
-    q = db.session.query(db.LastRevision.item_id, meta_uri0)\
-                  .join(db.LastRevision.item)\
-                  .filter(db.LastRevision.duplicate_of_id.is_(None))
+class DoiDeduplicator(object):
+    def run(self):
+        for item_id, uri in yieldItemIdMeta(meta_uri0):
+            doi = doiutil.filter(uri)
+            if doi:
+                # Busca duplicatas por DOI idêntico
+                duplicates = db.session.query(db.Revision)\
+                                       .join(db.Revision.last_revision)\
+                                       .filter(db.func.lower(meta_uri0) == doi.lower()).all()
+                if len(duplicates) >= 2:
+                    logger.info('Encontradas %d duplicatas do item.id=%r pelo DOI %r',
+                                len(duplicates), item_id, doi)
+                    merge(duplicates)
+        db.session.refresh_materialized_view(db.LastRevision)
 
-    g = dbutil.yieldNotYetSyncedRevisions(q, batch_size=16384, id_from_row=lambda row:row[0])
-    for item_id, uri in g:
-        doi = doiutil.filter(uri)
-        if doi:
-            # Busca duplicatas por DOI idêntico
-            duplicates = db.session.query(db.Revision)\
-                                   .join(db.Revision.last_revision)\
-                                   .filter(db.func.lower(meta_uri0) == doi.lower()).all()
-            if len(duplicates) >= 2:
-                logger.info('Encontradas %d duplicatas do item.id=%r pelo DOI %r',
-                            len(duplicates), item_id, doi)
-                merge(duplicates)
 
-    db.session.refresh_materialized_view(db.LastRevision)
+class TitleDeduplicator(object):
+    def __init__(self):
+        self.simInq = SimilarTitleInquirer()
 
-def deduplicateTitle():
-    simInq = SimilarTitleInquirer()
-    # TODO: Lembrar de tratar os seguintes casos:
-    #   - Se duplicatas encontradas possuírem DOIs diferentes, utilizar apenas o com melhor ranking
-    #   - Não considerar duplicatas se estiverem no mesmo CV
+    def run(self):
+        self.total = yieldItemIdMeta(meta_title, only_count=True)
+        self.itemsDone = 0
+        for item_id, title in yieldItemIdMeta(meta_title, batch_size=128):
+            self.process(item_id, title)
+            self.itemsDone += 1
+
+    def percent(self):
+        return '%5.1f%%'%((100.*self.itemsDone)/self.total)
+
+    def process(self, item_id, title):
+        similars = self.simInq.query(title)
+        assert similars[0][0] == 0,\
+               'Resultado do SimilarTitleInquirer deveria incluir o título atual, que tem distância nula'
+        if len(similars) == 1 and len(similars[0][1]) == 1:
+            # Otimização: nada a fazer caso não tenham sido encontrados similares
+            return
+        # Não corta o loop de candidatos até o primeiro nível com dist != 0
+        maxNonCutDist = max(dist for dist, revisions in similars[:2])
+
+        maybeLower = lambda s: util.maybeBind(lambda s:s.lower(), s)
+        meta = JSONMetadataWrapper(db.session.query(db.LastRevision.meta)\
+                                             .filter(db.LastRevision.item_id == item_id).scalar())
+        doi = maybeLower(meta.getDoi())
+        prodType = meta.getType()
+        #authors = meta.get('dc.contributor.author', what=None)
+
+        noMoreIterations = False
+        visitedCVs = set()
+        candidates = []
+        # Limpa publicações de tipos diferentes (artigo vs trabalho em anais de eventos).
+        # Descarta os candidatos com menor ranking no caso de DOIs inconsistentes, ou de
+        # publicações similares em um mesmo CV
+        for dist, revisions in similars:
+            if noMoreIterations and dist > maxNonCutDist:
+                break
+            for rev in revisions:
+                failedIteration = False
+                curMeta = JSONMetadataWrapper(rev.meta)
+                # Pula publicação se for de um tipo diferente
+                if curMeta.getType() != prodType:
+                    continue
+                # Se duplicatas encontradas possuirem DOIs diferentes,
+                # utilizar apenas o DOI que possua o melhor ranking
+                curDoi = getLowerOfDoiFromRevAndItsDuplicates(rev)
+                if doi is None:
+                    doi = curDoi
+                elif curDoi is not None and curDoi != doi:
+                    logger.info('Produções com títulos similares e DOIs diferentes: %r e %r', doi, curDoi)
+                    failedIteration = True
+                if not failedIteration:
+                    # Não considerar duplicatas se estiverem no mesmo CV
+                    item = rev.item
+                    if item.id_cnpq in visitedCVs:
+                        logger.info('Produção com título %r similar a outra já encontrada no mesmo CV %r',
+                            curMeta.getTitle(), item.id_cnpq)
+                        failedIteration = True
+                    visitedCVs.add(item.id_cnpq)
+                if failedIteration:
+                    noMoreIterations = True
+                    # Se este nível ainda possuir distância <= maxNonCutDist, continua
+                    # processando os similares para os próximos empates em distância,
+                    # senão corta o loop inteiro
+                    if dist <= maxNonCutDist:
+                        continue
+                    break
+                candidates.append(rev)
+
+        assert len(candidates) > 0,\
+               'Ao menos a própria publicação deveria estar entre os candidatos de similaridade'
+        if len(candidates) == 1:
+            # Otimização: nada a fazer caso não tenham sido encontrados outros candidatos
+            return
+
+        logger.info('[%s]:Encontrados %d candidatos para o título %r',
+                    self.percent(), len(candidates), title)
+        #duplicates = []
+        #for rev in candidates:
+        #    pass
+
+
+def yieldItemIdMeta(metaExpr, batch_size=16384, only_count=False):
+    """
+    Percorre última revisão dos ítens para os quais ainda não foram detectadas duplicatas
+
+    Retorna tuplas com o ID do item e o resultado da expressão `metaExpr` fornecida.
+    Resultados para os quais `metaExpr` seja nulo não são retornados.
+
+    Caso utilizada a opção `only_count`, apenas conta o total de resultados que seriam
+    percorridos pela query.
+    """
+    if only_count:
+        q = db.session.query(db.func.count(metaExpr))
+    else:
+        q = db.session.query(db.LastRevision.item_id, metaExpr)
+
+    q = q.join(db.LastRevision.item)\
+         .filter(db.LastRevision.duplicate_of_id.is_(None))\
+         .filter(metaExpr.isnot(None))
+
+    if only_count:
+        return q.scalar()
+    return dbutil.yieldNotYetSyncedRevisions(q, batch_size=batch_size, id_from_row=lambda row:row[0])
+
+
+def getLowerOfDoiFromRevAndItsDuplicates(rev):
+    """ Obtém o DOI (em minúsculas) da revisão `rev` ou de alguma de suas duplicatas """
+    doiSet = set(util.firstOrNone(row)
+                 for row in db.session.query(db.func.lower(meta_uri0)).filter(or_(
+                     db.LastRevision.id == rev.id,
+                     db.LastRevision.id == rev.duplicate_of_id,
+                     db.LastRevision.duplicate_of_id == rev.id)).all())
+    doiSet = {doiutil.filter(doi) for doi in doiSet}
+    doiSet = doiSet - {None,}
+    if len(doiSet) > 1:
+        raise AssertionError('%r nunca deveria ter sido mesclada a revisões com DOIs diferentes: %r!' %
+                             (rev, doiSet))
+    return util.firstOrNone(doiSet)
+
 
 class SimilarTitleInquirer(object):
     _instance = None  # Singleton
@@ -85,6 +206,11 @@ class SimilarTitleInquirer(object):
         """
         title = util.norm(title).encode('ascii')
         similarTitles = set(self.ssdb.retrieve(title))
+        # Remove publicações que pertençam à mesma série, mas que tenham uma numeração
+        # diferente no final do título
+        similarTitles = {s for s in similarTitles if not self.differsOnlyByAppendedNumeral(s, title)}
+        # Adiciona o título exatamente igual ao está sendo buscado, para o caso de este
+        # não ter sido retornado pela busca
         similarTitles.add(title)
         # Rankeia os títulos similares encontrados de acordo com a distância Levenshtein
         rankedTitles = sorted([(nameutil.levenshtein(title, s), s) for s in similarTitles])
@@ -99,11 +225,23 @@ class SimilarTitleInquirer(object):
         return [(dist, revisions) for (dist, revisions) in results
                 if len(revisions) > 0]
 
+    @staticmethod
+    def differsOnlyByAppendedNumeral(a, b):
+        """
+        Retorna True se os títulos `a` e `b` diferirem apenas de um numeral no final
+
+        Exemplos:
+        - 'Como casar strings de títulos - 1.' e 'Como casar strings de títulos 2'
+        - 'Numerais romanos devem ser lembrados; I' e 'Numerais romanos devem ser lembrados, II.'
+        """
+        preproc = lambda s: re.split(r'\s+', re.sub('[^a-z\s\d]', '', util.norm(s)).strip())
+        a, b = preproc(a), preproc(b)
+        isNumeral = lambda s: util.isArabicNumeral(s) or util.isRomanNumeral(s.upper())
+        return a[:-1] == b[:-1] and a[-1] != b[-1] and isNumeral(a[-1]) and isNumeral(b[-1])
+
     def _populateTitleTempTable(self):
         logger.info('Indexando versões exatas dos títulos normalizados')
-
         db.create_temp_table(db.RevNormTitle)
-        meta_title = db.LastRevision.meta[('dc','title','""',0,'value')].astext
 
         q = db.session.query(db.LastRevision.item_id, meta_title)\
                       .join(db.LastRevision.item)\
@@ -140,9 +278,11 @@ class SimilarTitleInquirer(object):
         self.ssdb.measure = dedupconf.titleMeasure
         self.ssdb.threshold = dedupconf.titleThreshold
 
+
 def main():
-    deduplicateDoi()
-    deduplicateTitle()
+    #DoiDeduplicator().run()
+    TitleDeduplicator().run()
+    # TODO: Remover indicador de duplicata para revisões outdated
 
 if __name__ == '__main__':
     main()

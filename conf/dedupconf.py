@@ -3,4 +3,4 @@
 import simstring
 
 titleMeasure = simstring.jaccard
-titleThreshold = 0.6
+titleThreshold = 0.7
