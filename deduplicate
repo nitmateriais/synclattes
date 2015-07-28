@@ -32,7 +32,12 @@ def merge(revisions):
             # revisão é a mesma que a rev.duplicate_of_id. Caso o item principal
             # tenha sido modificado, ainda assim é seguro utilizar a última revisão
             # do mesmo, pois esta será varrida pelo yieldNotYetSyncedRevisions
-            mainId = rev.duplicate_of.item.last_revision.id
+            #
+            # Versão otimizada manualmente de: mainId = rev.duplicate_of.item.last_revision.id
+            mainId = db.session.query(db.LastRevision.id)\
+                               .join((db.Revision, db.LastRevision.item_id == db.Revision.item_id))\
+                               .filter(db.Revision.id == rev.duplicate_of_id)\
+                               .scalar()
             break
     # Modifica o campo de todas as revisões, tirando a principal
     for rev in revisions:
