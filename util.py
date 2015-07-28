@@ -8,7 +8,13 @@ def onlyNumbers(s):
     """ Remove caracteres não-numéricos da string """
     return re.sub(r'[^\d]', '', s)
 
-def norm(s, encoding=wsconf.serverEncoding):
+class NormLevel:
+    REMOVE_ACCENTS=1
+    REMOVE_PUNCTUATION=2
+    ONLY_LETTERS=3
+    LETTERS_WITHOUT_SPACES=4
+
+def norm(s, level=NormLevel.REMOVE_ACCENTS, encoding=wsconf.serverEncoding):
     """ Retira acentos e espaços sobrando, e transforma tudo em minúsculas """
     if not isinstance(s, unicode):
         s = s.decode(encoding)
@@ -17,7 +23,14 @@ def norm(s, encoding=wsconf.serverEncoding):
         .encode('ascii','ignore')\
         .strip()\
         .lower()
+    if level == NormLevel.REMOVE_PUNCTUATION:
+        s = re.sub(r'[^a-z\d\s]', '', s)
+    elif level == NormLevel.ONLY_LETTERS:
+        s = re.sub(r'[^a-z\s]', '', s)
+    elif level == NormLevel.LETTERS_WITHOUT_SPACES:
+        s = re.sub(r'[^a-z]', '', s)
     return re.sub(r'\s+', ' ', s)
+
 
 def decodeHtml(s, encoding=wsconf.serverEncoding):
     """ Decodifica a string como HTML de forma permissiva """

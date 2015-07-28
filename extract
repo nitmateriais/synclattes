@@ -11,6 +11,8 @@ import ws, db, iso639, doiutil, nameutil, util
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger('extract')
 
+authorNorm = lambda s: util.norm(s, util.NormLevel.LETTERS_WITHOUT_SPACES)
+
 class MetadataProcessor(JSONMetadataBuilder):
     def run(self):
         self._title = None  # para log de mensagens de erro
@@ -32,8 +34,8 @@ class MetadataProcessor(JSONMetadataBuilder):
             # Faz score dos autores que não possuem idcnpq especificado
             STpl = namedtuple('STpl', ['score', 'autor'])
             score = lambda a: \
-                int(util.norm(a.nomecompleto) == self.cvproc.nomeCompletoNorm) + \
-                int(util.norm(a.nomecitacao) in self.cvproc.nomesEmCitacoesNorm)
+                int(authorNorm(a.nomecompleto) == self.cvproc.nomeCompletoNorm) + \
+                int(authorNorm(a.nomecitacao) in self.cvproc.nomesEmCitacoesNorm)
             scoredAutores = sorted((STpl(score(a), a) for a in autores if a.idcnpq is None), reverse=True)
             # Verifica se algum match foi encontrado
             if len(scoredAutores) == 0 or scoredAutores[0].score == 0:
@@ -209,7 +211,9 @@ class MetadataProcessorTrabalhoEventos(MetadataProcessor):
 
         # Tratamento para TITULO-DOS-ANAIS-OU-PROCEEDINGS
         # contendo apenas prefixo do livro
-        if re.sub(r'[^a-z]', '', util.norm(pubVenue)) in {'anais', 'proceedings'}:
+        if util.norm(pubVenue,
+                     util.NormLevel.LETTERS_WITHOUT_SPACES) \
+                     in {'anais', 'proceedings'}:
             pubVenue = util.noneIfEmpty(d.get('NOME-DO-EVENTO')) \
                 or pubVenue
 
@@ -287,8 +291,8 @@ class CVProcessor(object):
         dadosGerais = util.singleTag(self.xmlCV.xpath('//DADOS-GERAIS'))
         self.nomeCompleto = dadosGerais.get('NOME-COMPLETO')
         self.nomesEmCitacoes = {s.strip() for s in dadosGerais.get('NOME-EM-CITACOES-BIBLIOGRAFICAS').split(';')}
-        self.nomeCompletoNorm = util.norm(self.nomeCompleto)
-        self.nomesEmCitacoesNorm = {util.norm(s) for s in self.nomesEmCitacoes}
+        self.nomeCompletoNorm = authorNorm(self.nomeCompleto)
+        self.nomesEmCitacoesNorm = {authorNorm(s) for s in self.nomesEmCitacoes}
 
     def run(self):
         seqProdInDB = getItemsProdInDB(self.pessoaLattes)
