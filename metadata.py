@@ -102,7 +102,7 @@ class JSONMetadataWrapper(object):
         meta = meta.get(path[2] if len(path)==3 else '', [])
         if what is None:
             return meta
-        return [datum[what] for datum in meta]
+        return [datum.get(what) for datum in meta]
 
     def getSingle(self, k, what='value'):
         """
@@ -125,12 +125,7 @@ class JSONMetadataWrapper(object):
             return None
         return dateIssued
 
-    def toXml(json):
-        nsmap = {'atom': 'http://www.w3.org/2005/Atom',
-                 'dim':  'http://www.dspace.org/xmlns/dspace/dim'}
-        atom = ElementMaker(namespace=nsmap['atom'], nsmap=nsmap)
-        dim  = ElementMaker(namespace=nsmap['dim'],  nsmap=nsmap)
-        fields = []
+    def iterMetadata(self):
         for mdschema, elements in self.json.iteritems():
             assert(isinstance(elements, dict))
             if mdschema.startswith('_'):
@@ -139,14 +134,23 @@ class JSONMetadataWrapper(object):
                 assert(isinstance(qualifiers, dict))
                 for qualifier, metadata in qualifiers.iteritems():
                     assert(isinstance(metadata, list))
-                    for metadatum in metadata:
-                        assert(isinstance(metadatum, dict))
-                        value = metadatum.get('value')
-                        attr = {k:str(v) for k,v in metadatum.iteritems()
-                                if k != 'value' and not k.startswith('_') and v is not None}
-                        attr['mdschema'] = mdschema
-                        attr['element'] = element
-                        if qualifier != '':
-                            attr['qualifier'] = qualifier
-                        fields.append(dim.field(value, **attr))
+                    yield (mdschema, element, qualifier, metadata)
+
+    def toXml(self):
+        nsmap = {'atom': 'http://www.w3.org/2005/Atom',
+                 'dim':  'http://www.dspace.org/xmlns/dspace/dim'}
+        atom = ElementMaker(namespace=nsmap['atom'], nsmap=nsmap)
+        dim  = ElementMaker(namespace=nsmap['dim'],  nsmap=nsmap)
+        fields = []
+        for mdschema, element, qualifier, metadata in self.iterMetadata():
+            for metadatum in metadata:
+                assert(isinstance(metadatum, dict))
+                value = metadatum.get('value')
+                attr = {k:str(v) for k,v in metadatum.iteritems()
+                        if k != 'value' and not k.startswith('_') and v is not None}
+                attr['mdschema'] = mdschema
+                attr['element'] = element
+                if qualifier != '':
+                    attr['qualifier'] = qualifier
+                fields.append(dim.field(value, **attr))
         return atom.entry(*fields)

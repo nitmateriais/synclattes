@@ -1,4 +1,5 @@
 # -*- encoding: utf-8 -*-
+from sqlalchemy import or_
 import db
 
 def yieldNotYetSyncedRevisions(q, **kwargs):
@@ -13,3 +14,10 @@ def yieldNotYetSyncedRevisions(q, **kwargs):
                                      .op('is distinct from')
                                      (db.LastRevision.id)),
                             db.LastRevision.item_id, **kwargs)
+
+def filterDupLastRevGroup(q, rev):
+    """ Filtra a query `q` para o grupo de duplicatas da revisão `rev` """
+    return q.filter(or_(
+        db.LastRevision.id == rev.id,
+        db.LastRevision.id == rev.duplicate_of_id,
+        db.LastRevision.duplicate_of_id == rev.id))

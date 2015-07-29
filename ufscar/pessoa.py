@@ -1,6 +1,8 @@
+# -*- encoding: utf-8 -*-
+from __future__ import absolute_import
 from sqlalchemy import or_, and_
 from sqlalchemy.orm.exc import NoResultFound
-import db
+import db, util
 
 class PessoaInstituicao(object):
     def __init__(self, entidade):
@@ -25,3 +27,11 @@ class PessoaInstituicao(object):
         return self.entidade.data_nascimento.strftime('%d/%m/%Y')
     def getPessoaLattes(self):
         return self.entidade.pessoa_lattes
+    def getRoles(self):
+        """ Retorna lista de vínculos ativos da pessoa com a universidade """
+        return map(util.firstOrNone,
+                   db.session.query(db.TipoVinculo.nome)\
+                             .join(db.Vinculo)\
+                             .filter(db.Vinculo.pessoa_id == self.entidade.id)\
+                             .filter(db.Vinculo.fim_vinculo.is_(None))\
+                             .all())

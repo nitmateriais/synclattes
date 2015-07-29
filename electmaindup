@@ -1,0 +1,93 @@
+#!/usr/bin/python
+# -*- encoding: utf-8 -*-
+import itertools, logging
+from metadata import JSONMetadataWrapper
+import db, dbutil, doiutil, util
+import conf.electdupconf as electdupconf
+from ufscar.pessoa import PessoaInstituicao
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger('electmaindup')
+
+class RevisionJudge(object):
+    def __init__(self, rev):
+        self.rev = rev
+        self.meta = JSONMetadataWrapper(rev.meta)
+
+    def score(self):
+        return self.scoreRole()\
+             + self.scoreDoi()\
+             + self.scoreAuthority()\
+             + self.scoreRelevanceFlag()\
+             + self.scoreMetadatumCompleteness()
+
+    def scoreRole(self):
+        pessoa = PessoaInstituicao(self.rev.item.pessoa_lattes.pessoa)
+        scoreForRoles = (electdupconf.scoreForRole.get(role, 0) for role in pessoa.getRoles())
+        return max(itertools.chain([0], scoreForRoles))
+
+    def scoreDoi(self):
+        return electdupconf.scoreDoi \
+               if self.meta.getDoi() is not None \
+               else 0
+
+    def scoreAuthority(self):
+        authorityValues = self.meta.get('dc.contributor.author', what='authority')
+        return electdupconf.scorePerAuthorWithAuthorityId * \
+               sum(int(bool(authority)) for authority in authorityValues)
+
+    def scoreRelevanceFlag(self):
+        return electdupconf.scoreForRelevanceFlag \
+               if self.meta.getSingle('_lattes.relevancia') \
+               else 0
+
+    def scoreMetadatumCompleteness(self):
+        return sum(electdupconf.scorePerMetadatumKey
+                   for _ in self.meta.iterMetadata())
+
+
+visitedRevIds = set()
+
+def getRevGroup(rev):
+    if rev.id in visitedRevIds:
+        return []
+    rev_group = dbutil.filterDupLastRevGroup(db.session.query(db.LastRevision), rev).all()
+    for r in rev_group:
+        if r.id in visitedRevIds:
+            return []
+        visitedRevIds.add(r.id)
+    return rev_group
+
+def reassignRevGroup(rev_group, main_rev_id):
+    hadMain = False
+    for rev in rev_group:
+        e = rev.editable
+        db.session.add(e)
+        if e.id == main_rev_id:
+            e.duplicate_of_id = None
+            hadMain = True
+        else:
+            e.duplicate_of_id = main_rev_id
+    assert hadMain, 'A revisão principal foi perdida do grupo rev_group!'
+    db.session.commit()
+
+
+def main():
+    q = db.session.query(db.LastRevision)\
+                  .join(db.LastRevision.item)\
+                  .filter(db.LastRevision.meta.isnot(None))
+
+    for rev in dbutil.yieldNotYetSyncedRevisions(q, batch_size=256):
+        rev_group = getRevGroup(rev)
+        if len(rev_group) < 2:  # 0 - grupo já visitado
+            continue            # 1 - revisão sem duplicatas
+        scoredRevs = sorted(((RevisionJudge(r).score(), r.id)
+                             for r in rev_group),
+                            reverse=True)
+        logger.info('Grupo pontuado: %r' % scoredRevs)
+        reassignRevGroup(rev_group, scoredRevs[0][1])
+
+    db.session.refresh_materialized_view(db.LastRevision)
+
+if __name__ == '__main__':
+    main()

@@ -2,7 +2,6 @@
 # -*- encoding: utf-8 -*-
 import os, re, shutil, atexit, tempfile, logging
 import simstring
-from sqlalchemy import or_
 from metadata import JSONMetadataWrapper
 import db, dbutil, doiutil, nameutil, util
 import conf.dedupconf as dedupconf
@@ -194,11 +193,8 @@ def yieldItemIdMeta(metaExpr, batch_size=16384, only_count=False):
 
 def getLowerOfDoiFromRevAndItsDuplicates(rev):
     """ Obtém o DOI (em minúsculas) da revisão `rev` ou de alguma de suas duplicatas """
-    doiSet = set(util.firstOrNone(row)
-                 for row in db.session.query(db.func.lower(meta_uri0)).filter(or_(
-                     db.LastRevision.id == rev.id,
-                     db.LastRevision.id == rev.duplicate_of_id,
-                     db.LastRevision.duplicate_of_id == rev.id)).all())
+    q = db.session.query(db.func.lower(meta_uri0))
+    doiSet = set(util.firstOrNone(row) for row in dbutil.filterDupLastRevGroup(q, rev).all())
     doiSet = {doiutil.filter(doi) for doi in doiSet}
     doiSet = doiSet - {None,}
     if len(doiSet) > 1:
