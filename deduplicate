@@ -133,6 +133,7 @@ class TitleDeduplicator(object):
                 if not failedIteration:
                     # Não considerar duplicatas se estiverem no mesmo CV
                     item = rev.item
+                    # TODO: verificar recursivamente, assim como é feito com o DOI
                     if item.id_cnpq in visitedCVs:
                         logger.info('Produção com título %r similar a outra já encontrada no mesmo CV %r',
                             curMeta.getTitle(), item.id_cnpq)
