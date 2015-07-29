@@ -58,19 +58,6 @@ def getRevGroup(rev):
         visitedRevIds.add(r.id)
     return rev_group
 
-def reassignRevGroup(rev_group, mainId):
-    hadMain = False
-    for rev in rev_group:
-        rev = rev.editable
-        db.session.add(rev)
-        if rev.id == mainId:
-            rev.duplicate_of_id = None
-            hadMain = True
-        else:
-            rev.duplicate_of_id = mainId
-    assert hadMain, 'A revisão principal foi perdida do grupo rev_group!'
-    db.session.commit()
-
 
 def main():
     assert dbutil.checkGroupIntegrity()
@@ -86,7 +73,7 @@ def main():
                              for r in rev_group),
                             reverse=True)
         logger.info('Grupo pontuado: %r' % scoredRevs)
-        reassignRevGroup(rev_group, scoredRevs[0][1])
+        dbutil.reassignRevGroup(rev_group, scoredRevs[0][1])
 
     assert dbutil.checkGroupIntegrity()
     db.session.refresh_materialized_view(db.LastRevision)

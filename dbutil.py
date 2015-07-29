@@ -22,6 +22,22 @@ def filterDupLastRevGroup(q, rev):
         db.LastRevision.id == rev.duplicate_of_id,
         db.LastRevision.duplicate_of_id == rev.id))
 
+def reassignRevGroup(revisions, mainId):
+    # Modifica o campo de todas as revisões, exceto a principal,
+    # e de quaisquer revisões que já forem duplicatas das mesmas
+    revIds = set(rev.id for rev in revisions) - {mainId,}
+    db.session.query(db.Revision) \
+        .filter(or_(db.Revision.id.in_(revIds),
+                    db.Revision.duplicate_of_id.in_(revIds))) \
+        .update({db.Revision.duplicate_of_id: mainId},
+                synchronize_session=False)
+    # Assegura que a principal tenha o campo nulo
+    db.session.query(db.Revision) \
+        .filter(db.Revision.id == mainId) \
+        .update({db.Revision.duplicate_of_id: None},
+                synchronize_session=False)
+    db.session.commit()
+
 def checkGroupIntegrity():
     """ Verifica se todos os grupos então com duplicate_of_id uniforme """
     return db.session.query(db.func.count())\
