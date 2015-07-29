@@ -1,6 +1,7 @@
 #!/usr/bin/python
 # -*- encoding: utf-8 -*-
 import os, re, shutil, atexit, tempfile, logging
+from sqlalchemy import or_
 import simstring
 from metadata import JSONMetadataWrapper
 import db, dbutil, doiutil, nameutil, util
@@ -38,14 +39,19 @@ def merge(revisions):
                                .filter(db.Revision.id == rev.duplicate_of_id)\
                                .scalar()
             break
-    # Modifica o campo de todas as revisões, tirando a principal
-    for rev in revisions:
-        assert(isinstance(rev, db.Revision))  # evita uso acidental de LastRevision, que é readonly
-        db.session.add(rev)
-        if rev.id == mainId:
-            rev.duplicate_of_id = None
-        else:
-            rev.duplicate_of_id = mainId
+    # Modifica o campo de todas as revisões, exceto a principal,
+    # e de quaisquer revisões que já forem duplicatas das mesmas
+    revIds = set(rev.id for rev in revisions) - {mainId,}
+    db.session.query(db.Revision)\
+        .filter(or_(db.Revision.id.in_(revIds),
+                    db.Revision.duplicate_of_id.in_(revIds)))\
+        .update({db.Revision.duplicate_of_id: mainId},
+                synchronize_session=False)
+    # Assegura que a principal tenha o campo nulo
+    db.session.query(db.Revision)\
+        .filter(db.Revision.id == mainId)\
+        .update({db.Revision.duplicate_of_id: None},
+                synchronize_session=False)
     db.session.commit()
 
 
@@ -55,8 +61,7 @@ class DoiDeduplicator(object):
             doi = doiutil.filter(uri)
             if doi:
                 # Busca duplicatas por DOI idêntico
-                duplicates = db.session.query(db.Revision)\
-                                       .join(db.Revision.last_revision)\
+                duplicates = db.session.query(db.LastRevision)\
                                        .filter(db.func.lower(meta_uri0) == doi.lower()).all()
                 if len(duplicates) >= 2:
                     logger.info('Encontradas %d duplicatas do item.id=%r pelo DOI %r',
@@ -162,7 +167,7 @@ class TitleDeduplicator(object):
                 logger.info('Item %r rejeitado como duplicata de %r: distância entre autores = %.2f',
                             rev.item_id, item_id, authorSetDist)
                 continue
-            duplicates.append(rev.editable)
+            duplicates.append(rev)
 
         logger.info('[%s]:Encontradas %d duplicatas para o item %r',
             self.percent(), len(duplicates), item_id)
