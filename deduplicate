@@ -74,6 +74,7 @@ class TitleDeduplicator(object):
         for item_id, title in yieldItemIdMeta(meta_title, batch_size=128):
             self.process(item_id, title)
             self.itemsDone += 1
+        db.session.refresh_materialized_view(db.LastRevision)
 
     def percent(self):
         return '%5.1f%%'%((100.*self.itemsDone)/self.total)
@@ -302,10 +303,24 @@ class SimilarTitleInquirer(object):
         self.ssdb.threshold = dedupconf.titleThreshold
 
 
+def removeDuplicateOfIdPointingToOutdatedRevisions():
+    db.session.query(db.Revision)\
+              .filter(db.Revision.duplicate_of_id.notin_(
+                  db.session.query(db.LastRevision.id)
+              ))\
+              .update({db.Revision.duplicate_of_id: None},
+                      synchronize_session=False)
+    db.session.refresh_materialized_view(db.LastRevision)
+
+
 def main():
-    #DoiDeduplicator().run()
+    # Desduplica registros com DOIs idênticos
+    DoiDeduplicator().run()
+    # Desduplica por similaridade de títulos
     TitleDeduplicator().run()
-    # TODO: Remover indicador de duplicata para revisões outdated
+    # Remove indicador de duplicata para revisões desatualizadas
+    removeDuplicateOfIdPointingToOutdatedRevisions()
+
 
 if __name__ == '__main__':
     main()
