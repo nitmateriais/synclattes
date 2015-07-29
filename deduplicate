@@ -110,6 +110,9 @@ class TitleDeduplicator(object):
         for dist, revisions in similars:
             if noMoreIterations and dist > maxNonCutDist:
                 break
+            # Prioriza revisão correspondente ao item atual
+            revisions = sorted(revisions, key=lambda rev:rev.item_id==item_id, reverse=True)
+            # Percorre revisões
             for rev in revisions:
                 failedIteration = False
                 curMeta = JSONMetadataWrapper(rev.meta)
@@ -169,7 +172,9 @@ class TitleDeduplicator(object):
                 continue
             duplicates.append(rev)
 
-        logger.info('[%s]:Encontradas %d duplicatas para o item %r',
+        assert len(duplicates) > 0,\
+            'Ao menos a própria publicação deveria estar no conjunto de revisões'
+        logger.info('[%s]:Encontradas %d revisões para o item %r',
             self.percent(), len(duplicates), item_id)
         merge(duplicates)
 
