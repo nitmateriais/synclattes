@@ -21,3 +21,10 @@ def filterDupLastRevGroup(q, rev):
         db.LastRevision.id == rev.id,
         db.LastRevision.id == rev.duplicate_of_id,
         db.LastRevision.duplicate_of_id == rev.id))
+
+def checkGroupIntegrity():
+    """ Verifica se todos os grupos então com duplicate_of_id uniforme """
+    return db.session.query(db.func.count())\
+                     .filter(db.Revision.id.in_(db.session.query(db.Revision.duplicate_of_id)))\
+                     .filter(db.Revision.duplicate_of_id.isnot(None))\
+                     .scalar() == 0

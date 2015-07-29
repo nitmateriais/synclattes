@@ -73,6 +73,7 @@ def reassignRevGroup(rev_group, mainId):
 
 
 def main():
+    assert dbutil.checkGroupIntegrity()
     q = db.session.query(db.LastRevision)\
                   .join(db.LastRevision.item)\
                   .filter(db.LastRevision.meta.isnot(None))
@@ -87,6 +88,7 @@ def main():
         logger.info('Grupo pontuado: %r' % scoredRevs)
         reassignRevGroup(rev_group, scoredRevs[0][1])
 
+    assert dbutil.checkGroupIntegrity()
     db.session.refresh_materialized_view(db.LastRevision)
 
 if __name__ == '__main__':

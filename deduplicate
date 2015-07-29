@@ -78,6 +78,9 @@ class TitleDeduplicator(object):
         self.total = yieldItemIdMeta(meta_title, only_count=True)
         self.itemsDone = 0
         for item_id, title in yieldItemIdMeta(meta_title, batch_size=128):
+            if self.itemsDone % 4096 == 0:
+                assert dbutil.checkGroupIntegrity(),\
+                       'Teste de integridade dos grupos falhou em meio ao processo'
             self.process(item_id, title)
             self.itemsDone += 1
         db.session.refresh_materialized_view(db.LastRevision)
