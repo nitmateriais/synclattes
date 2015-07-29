@@ -41,8 +41,10 @@ def merge(revisions):
     # Modifica o campo de todas as revisões, tirando a principal
     for rev in revisions:
         assert(isinstance(rev, db.Revision))  # evita uso acidental de LastRevision, que é readonly
-        if rev.id != mainId:
-            db.session.add(rev)
+        db.session.add(rev)
+        if rev.id == mainId:
+            rev.duplicate_of_id = None
+        else:
             rev.duplicate_of_id = mainId
     db.session.commit()
 
