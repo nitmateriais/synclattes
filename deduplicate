@@ -1,7 +1,6 @@
 #!/usr/bin/python
 # -*- encoding: utf-8 -*-
 import os, re, shutil, atexit, tempfile, logging
-from sqlalchemy import or_
 import simstring
 from metadata import JSONMetadataWrapper
 import db, dbutil, doiutil, nameutil, util
