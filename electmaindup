@@ -58,16 +58,16 @@ def getRevGroup(rev):
         visitedRevIds.add(r.id)
     return rev_group
 
-def reassignRevGroup(rev_group, main_rev_id):
+def reassignRevGroup(rev_group, mainId):
     hadMain = False
     for rev in rev_group:
-        e = rev.editable
-        db.session.add(e)
-        if e.id == main_rev_id:
-            e.duplicate_of_id = None
+        rev = rev.editable
+        db.session.add(rev)
+        if rev.id == mainId:
+            rev.duplicate_of_id = None
             hadMain = True
         else:
-            e.duplicate_of_id = main_rev_id
+            rev.duplicate_of_id = mainId
     assert hadMain, 'A revisão principal foi perdida do grupo rev_group!'
     db.session.commit()
 
