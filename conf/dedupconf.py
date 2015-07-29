@@ -14,7 +14,7 @@ titleThreshold = 0.7              # Limiar de similaridade
 # digitado em uma ordem incorreta. Se a distância de edição normalizada pelo
 # tamanho dos nomes e pelo número de nomes for acima do limiar definido abaixo,
 # as produções correspondentes não são consideradas duplicatas.
-authorThreshold = 0.9
+authorThreshold = 1.5
 
 # Define se as produções precisam ter sido publicadas no mesmo ano para serem
 # consideradas duplicatas
