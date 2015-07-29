@@ -2,7 +2,7 @@
 # -*- encoding: utf-8 -*-
 import itertools, logging
 from metadata import JSONMetadataWrapper
-import db, dbutil, doiutil, util
+import db, dbutil
 import conf.electdupconf as electdupconf
 from ufscar.pessoa import PessoaInstituicao
 
