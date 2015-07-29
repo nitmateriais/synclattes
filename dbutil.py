@@ -22,6 +22,42 @@ def filterDupLastRevGroup(q, rev):
         db.LastRevision.id == rev.duplicate_of_id,
         db.LastRevision.duplicate_of_id == rev.id))
 
+class RevGroupVisitor(object):
+    def __init__(self):
+        self.visitedRevIds = set()
+
+    def getRevGroup(self, rev):
+        if rev.id in self.visitedRevIds:
+            return []
+        rev_group = filterDupLastRevGroup(db.session.query(db.LastRevision), rev).all()
+        for r in rev_group:
+            if r.id in self.visitedRevIds:
+                return []
+            self.visitedRevIds.add(r.id)
+        return rev_group
+
+    def yieldGroups(self):
+        q = db.session.query(db.LastRevision) \
+            .join(db.LastRevision.item) \
+            .filter(db.LastRevision.meta.isnot(None))
+        for rev in yieldNotYetSyncedRevisions(q, batch_size=256):
+            rev_group = self.getRevGroup(rev)
+            if len(rev_group) < 2:  # 0 - grupo já visitado
+                continue            # 1 - revisão sem duplicatas
+            yield rev_group
+
+def splitMainRev(rev_group):
+    mainRev = None
+    otherRevs = []
+    for rev in rev_group:
+        if rev.duplicate_of_id is None:
+            mainRev = rev
+        else:
+            otherRevs.append(rev)
+    if mainRev is None:
+        raise ValueError('Não foi passado um grupo completo')
+    return mainRev, otherRevs
+
 def reassignRevGroup(revisions, mainId):
     # Modifica o campo de todas as revisões, exceto a principal,
     # e de quaisquer revisões que já forem duplicatas das mesmas

@@ -1,0 +1,69 @@
+#!/usr/bin/python
+# -*- encoding: utf-8 -*-
+
+import itertools, logging
+from metadata import JSONMetadataWrapper, CF
+from copy import deepcopy
+import db, dbutil, nameutil, util
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger('authoritymix')
+
+def distAuthorityTuples(alreadyPresent, revisions, k, name):
+    if name is None:
+        return
+    name = util.norm(name, util.NormLevel.ONLY_LETTERS)
+    for rev in revisions:
+        meta = JSONMetadataWrapper(rev.meta)
+        for author in meta.get('dc.contributor.author', what=None):
+            xget = lambda key: util.noneIfEmpty(author.get(key))
+            authority = xget('authority')
+            if authority in alreadyPresent:
+                continue
+            curName = xget(k)
+            if curName:
+                curName = util.norm(curName, util.NormLevel.ONLY_LETTERS)
+                yield (nameutil.levenshtein(name, curName), xget('authority'))
+
+def main():
+    for rev_group in dbutil.RevGroupVisitor().yieldGroups():
+        mainRev, otherRevs = dbutil.splitMainRev(rev_group)
+        meta = JSONMetadataWrapper(deepcopy(mainRev.meta))
+
+        alreadyPresent = set(meta.get('dc.contributor.author', what='authority')) - {None, ''}
+        authors = meta.get('dc.contributor.author', what=None)
+
+        for author in authors:
+            xget = lambda key: util.noneIfEmpty(author.get(key))
+            if xget('authority') is None:
+                # Se não estiver definido ID de autoridade para este autor, procura
+                # o ID do nome de autor mais próximo presente nas duplicatas
+                scoredTuples = sorted(itertools.chain(
+                    distAuthorityTuples(alreadyPresent, otherRevs, 'value', xget('value')),
+                    distAuthorityTuples(alreadyPresent, otherRevs, '_nomecompleto', xget('_nomecompleto'))
+                ))
+                confidence = CF.UNCERTAIN
+                if len(scoredTuples) > 1 and scoredTuples[0][0] == scoredTuples[1][0]:
+                    # Empate de distância
+                    confidence = CF.AMBIGUOUS
+                if len(scoredTuples) > 0 and scoredTuples[0][1] is not None:
+                    author['authority'] = scoredTuples[0][1]
+                    author['confidence'] = confidence
+
+        # Cria nova revisão atualizada caso os metadados tenham mudado
+        if meta.json != mainRev.meta:
+            logger.info('Atualizado metadado do item %r: dc.contributor.author=%r',
+                        mainRev.item_id, authors)
+            newRev = db.Revision(item_id=mainRev.item_id, source='authoritymix', meta=meta.json)
+            db.session.add(newRev)
+            # Atualiza revisão principal das revisões que tem esta marcada como duplicata
+            for rev in otherRevs:
+                assert rev.editable in db.session
+                rev.editable.duplicate_of = newRev
+            db.session.commit()
+
+    db.session.refresh_materialized_view(db.LastRevision)
+
+
+if __name__ == '__main__':
+    main()

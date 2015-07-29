@@ -46,29 +46,9 @@ class RevisionJudge(object):
                    for _ in self.meta.iterMetadata())
 
 
-visitedRevIds = set()
-
-def getRevGroup(rev):
-    if rev.id in visitedRevIds:
-        return []
-    rev_group = dbutil.filterDupLastRevGroup(db.session.query(db.LastRevision), rev).all()
-    for r in rev_group:
-        if r.id in visitedRevIds:
-            return []
-        visitedRevIds.add(r.id)
-    return rev_group
-
-
 def main():
     assert dbutil.checkGroupIntegrity()
-    q = db.session.query(db.LastRevision)\
-                  .join(db.LastRevision.item)\
-                  .filter(db.LastRevision.meta.isnot(None))
-
-    for rev in dbutil.yieldNotYetSyncedRevisions(q, batch_size=256):
-        rev_group = getRevGroup(rev)
-        if len(rev_group) < 2:  # 0 - grupo já visitado
-            continue            # 1 - revisão sem duplicatas
+    for rev_group in dbutil.RevGroupVisitor().yieldGroups():
         scoredRevs = sorted(((RevisionJudge(r).score(), r.id)
                              for r in rev_group),
                             reverse=True)
