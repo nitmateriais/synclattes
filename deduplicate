@@ -311,7 +311,20 @@ def removeDuplicateOfIdPointingToOutdatedRevisions():
     db.session.refresh_materialized_view(db.LastRevision)
 
 
+def removeDuplicateOfIdReferencesToRemovedEntries():
+    db.session.query(db.Revision)\
+              .filter(db.Revision.item_id.in_(
+                  db.session.query(db.LastRevision.item_id)
+                            .filter(db.LastRevision.meta.is_(None))
+              ))\
+              .update({db.Revision.duplicate_of_id: None},
+                      synchronize_session=False)
+    db.session.refresh_materialized_view(db.LastRevision)
+
+
 def main():
+    # Remove referências a registros que foram apagados
+    removeDuplicateOfIdReferencesToRemovedEntries()
     # Desduplica registros com DOIs idênticos
     DoiDeduplicator().run()
     # Desduplica por similaridade de títulos
