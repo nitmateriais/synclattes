@@ -9,6 +9,14 @@ from metadata import JSONMetadataWrapper
 import conf.dspaceconf as dspaceconf
 import db, dbutil, util
 
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger('sync')
+
+def main():
+    for main_rev, other_revs in dbutil.yieldRevGroups(excludeSingleRevs=False):
+        logger.info('%r -> %r', main_rev.id, [x.id for x in other_revs])
+
+
 class DSpaceOperations(object):
     editIriRegex = re.compile(r'^' + dspaceconf.editIri.replace('%d', r'(\d+)') + r'$')
     nsmap = {'atom': 'http://www.w3.org/2005/Atom'}
@@ -61,3 +69,7 @@ class RestSession(object):
         if r.status != 200:
             raise RestError(r)
         return r.data
+
+if __name__ == '__main__':
+    main()
+
