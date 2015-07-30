@@ -4,4 +4,3 @@
 import logging
 from metadata import JSONMetadataWrapper
 import db, dbutil, util
-
