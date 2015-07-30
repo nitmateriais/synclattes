@@ -1,6 +1,34 @@
 #!/usr/bin/python
 # -*- encoding: utf-8 -*-
 
-import logging
+import urllib3, json, logging
 from metadata import JSONMetadataWrapper
+import conf.dspaceconf as dspaceconf
 import db, dbutil, util
+
+class DSpaceSession(RestSession):
+    def withdraw_item(self, item_id):
+        self.request('POST', '/items/%d/withdraw' % item_id)
+    def reinstate_item(self, item_id):
+        self.request('POST', '/items/%d/reinstate' % item_id)
+
+class RestError(Exception):
+    def __init__(self, response):
+        self.response = response
+    def __str__(self):
+        return '(status=%d, data=%r)' % (self.response.status, self.response.data)
+
+class RestSession(object):
+    def __init__(self, url=dspaceconf.restUrl, username=dspaceconf.username, password=dspaceconf.password):
+        self.url = url
+        self.http = urllib3.PoolManager(headers={'Content-Type': 'application/json'})
+        token = self.request('POST', '/login', {'email': username, 'password': password})
+        self.http.headers['rest-dspace-token'] = token
+    def logout(self):
+        self.request('POST', '/logout')
+    def request(self, method, path, data=None):
+        r = self.http.urlopen(method, self.url + path,
+                              body=util.maybeBind(json.dumps, data))
+        if r.status != 200:
+            raise RestError(r)
+        return r.data

@@ -10,3 +10,6 @@ password = 'pass'
 
 # Coleção padrão de destino das entradas de metadados
 collectionIri = 'https://repositorion.ufscar.br/swordv2/collection/ufscar/2'
+
+# Ponto de entrada da API RESTful (para operações não suportadas pelo SWORDv2)
+restUrl = 'https://repositorion.ufscar.br/rest'
