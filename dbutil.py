@@ -37,9 +37,9 @@ class RevGroupVisitor(object):
         return rev_group
 
     def yieldGroups(self):
-        q = db.session.query(db.LastRevision) \
-            .join(db.LastRevision.item) \
-            .filter(db.LastRevision.meta.isnot(None))
+        q = db.session.query(db.LastRevision)\
+                      .join(db.LastRevision.item)\
+                      .filter(db.LastRevision.meta.isnot(None))
         for rev in yieldNotYetSyncedRevisions(q, batch_size=256):
             rev_group = self.getRevGroup(rev)
             if len(rev_group) < 2:  # 0 - grupo já visitado
