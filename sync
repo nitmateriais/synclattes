@@ -1,16 +1,41 @@
 #!/usr/bin/python
 # -*- encoding: utf-8 -*-
 
-import urllib3, json, logging
+import re, json, logging
+import urllib3, certifi
+from lxml import etree
+import sword2
 from metadata import JSONMetadataWrapper
 import conf.dspaceconf as dspaceconf
 import db, dbutil, util
 
-class DSpaceSession(RestSession):
-    def withdraw_item(self, item_id):
-        self.request('POST', '/items/%d/withdraw' % item_id)
-    def reinstate_item(self, item_id):
-        self.request('POST', '/items/%d/reinstate' % item_id)
+class DSpaceOperations(object):
+    editIriRegex = re.compile(r'^' + dspaceconf.editIri.replace('%d', r'(\d+)') + r'$')
+    nsmap = {'atom': 'http://www.w3.org/2005/Atom'}
+    def __init__(self):
+        self.c = sword2.Connection(dspaceconf.serviceDocument, dspaceconf.username, dspaceconf.password)
+        self.rest = RestSession(dspaceconf.restUrl, dspaceconf.username, dspaceconf.password)
+    def logout(self):
+        self.rest.logout()
+    def item_withdraw(self, item_id):
+        self.rest.request('POST', '/items/%d/withdraw' % item_id)
+    def item_reinstate(self, item_id):
+        self.rest.request('POST', '/items/%d/reinstate' % item_id)
+    def item_has_bitstreams(self, item_id):
+        statement = self.c.get_atom_sword_statement(dspaceconf.editMediaIri % item_id)
+        return statement.dom.xpath('boolean(//atom:entry[1])', namespaces=self.nsmap)
+    def item_deposit(self, root, on_behalf_of=None, in_progress=False):
+        receipt = self.c.create(col_iri=dspaceconf.collectionIri,
+                                metadata_entry=etree.tostring(root),
+                                on_behalf_of=on_behalf_of,
+                                in_progress=in_progress)
+        return int(self.editIriRegex.match(receipt.edit).group(1))
+    def item_update_metadata(self, item_id, root, on_behalf_of=None, in_progress=False):
+        self.c.update(metadata_entry=etree.tostring(root),
+                      edit_iri=dspaceconf.editIri % item_id,
+                      edit_media_iri=dspaceconf.editMediaIri % item_id,
+                      on_behalf_of=on_behalf_of,
+                      in_progress=in_progress)
 
 class RestError(Exception):
     def __init__(self, response):
@@ -19,9 +44,13 @@ class RestError(Exception):
         return '(status=%d, data=%r)' % (self.response.status, self.response.data)
 
 class RestSession(object):
-    def __init__(self, url=dspaceconf.restUrl, username=dspaceconf.username, password=dspaceconf.password):
+    def __init__(self, url, username, password):
         self.url = url
-        self.http = urllib3.PoolManager(headers={'Content-Type': 'application/json'})
+        self.http = urllib3.PoolManager(
+            cert_reqs='CERT_REQUIRED',
+            ca_certs=certifi.where(),
+            headers={'Content-Type': 'application/json'}
+        )
         token = self.request('POST', '/login', {'email': username, 'password': password})
         self.http.headers['rest-dspace-token'] = token
     def logout(self):
