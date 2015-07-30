@@ -22,6 +22,26 @@ def filterDupLastRevGroup(q, rev):
         db.LastRevision.id == rev.duplicate_of_id,
         db.LastRevision.duplicate_of_id == rev.id))
 
+
+"""
+-- Operação realizada por RevGroupVisitor e splitMainRev em SQL puro
+--
+select main_id, other_revs from
+(
+    select o.id as main_id, array(select i.id from synclattes.last_revision i where i.duplicate_of_id = o.id) as other_revs
+        from synclattes.last_revision o
+    where o.duplicate_of_id is null
+        and o.meta is not null
+) t
+where array_length(other_revs, 1) > 0
+and exists (
+    select 1
+      from synclattes.last_revision
+      join synclattes.item on last_revision.item_id = item.id
+    where last_revision.id = any (array_append(other_revs, main_id))
+      and item.dspace_cur_rev_id is distinct from last_revision.id)
+"""
+
 class RevGroupVisitor(object):
     def __init__(self):
         self.visitedRevIds = set()
