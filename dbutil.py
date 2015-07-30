@@ -27,15 +27,13 @@ def filterDupLastRevGroup(q, rev):
         db.LastRevision.duplicate_of_id == rev.id))
 
 
-def yieldRevIdGroups(excludeDeletedMeta=True, excludeSingleRevs=True, onlyGroupsPendingSync=True,
-                     batch_size=8192):
-
+def yieldRevIdGroups(excludeDeletedMeta=True, excludeSingleRevs=True, onlyGroupsPendingSync=True, batch_size=8192):
     LastRevMain = aliased(db.LastRevision, name='last_rev_main')
     LastRevOther = aliased(db.LastRevision, name='last_rev_other')
 
     q = db.session.query(LastRevMain.id.label('main_id'),
                          ArraySel(select([LastRevOther.id])
-                                  .where(LastRevOther.duplicate_of_id==LastRevMain.id))\
+                                  .where(LastRevOther.duplicate_of_id == LastRevMain.id))
                          .label('other_revs'))\
                   .filter(LastRevMain.duplicate_of_id.is_(None))
 
@@ -51,7 +49,7 @@ def yieldRevIdGroups(excludeDeletedMeta=True, excludeSingleRevs=True, onlyGroups
     if onlyGroupsPendingSync:
         outerq = outerq.filter(
             exists(select([1])
-                   .select_from(join(db.LastRevision, db.Item, db.LastRevision.item_id==db.Item.id))
+                   .select_from(join(db.LastRevision, db.Item, db.LastRevision.item_id == db.Item.id))
                    .where(db.LastRevision.id ==
                           db.func.any(db.func.array_append(q.c.other_revs, q.c.main_id)))
                    .where(db.Item.dspace_cur_rev_id.op('is distinct from')(db.LastRevision.id))))
@@ -61,7 +59,7 @@ def yieldRevIdGroups(excludeDeletedMeta=True, excludeSingleRevs=True, onlyGroups
 
 def yieldRevGroups(**kwargs):
     for main_id, other_revs in yieldRevIdGroups(**kwargs):
-        yield (db.session.query(db.Revision).filter(db.Revision.id==main_id).one(),
+        yield (db.session.query(db.Revision).filter(db.Revision.id == main_id).one(),
                db.session.query(db.Revision).filter(db.Revision.id.in_(other_revs)).all())
 
 
