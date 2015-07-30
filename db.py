@@ -1,7 +1,7 @@
 #!/usr/bin/python
 # -*- encoding: utf-8 -*-
 import sqlalchemy
-from sqlalchemy import Column, ForeignKey, UniqueConstraint, Index, \
+from sqlalchemy import Column, ForeignKey, UniqueConstraint, CheckConstraint, Index, \
      BigInteger, Integer, String, DateTime, Date, Boolean
 from sqlalchemy.dialects.postgresql import JSONB, ENUM
 from sqlalchemy.orm import relationship, backref
@@ -16,12 +16,16 @@ class Item(Base):
     id_cnpq = Column(String, ForeignKey('synclattes.pessoa_lattes.id_cnpq'), nullable=False, index=True)
     seq_prod = Column(Integer, nullable=False)
     dspace_item_id = Column(BigInteger, nullable=True)
+    dspace_item_active = Column(Boolean, nullable=False, default=False)  # o id acima está ativo no dspace?
     dspace_cur_rev_id = Column(BigInteger, ForeignKey('synclattes.revision.id'), nullable=True)
     nofetch = Column(Boolean, nullable=False, default=False)  # não recuperar do CV Lattes para o banco
     nosync = Column(Boolean, nullable=False, default=False)   # não sincronizar do banco com o DSpace
 
     __tablename__ = 'item'
     __table_args__ = (UniqueConstraint(id_cnpq, seq_prod),
+                      # se o item estiver ativo no DSpace, o id correspondente não pode ser nulo
+                      CheckConstraint('not dspace_item_active or not dspace_item_id is null',
+                                      name='has_id_if_active'),
                       {'schema': 'synclattes'})
 
     pessoa_lattes = relationship('PessoaLattes', order_by=id,
