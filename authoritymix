@@ -26,8 +26,7 @@ def distAuthorityTuples(alreadyPresent, revisions, k, name):
                 yield (nameutil.levenshtein(name, curName), xget('authority'))
 
 def main():
-    for rev_group in dbutil.RevGroupVisitor().yieldGroups():
-        mainRev, otherRevs = dbutil.splitMainRev(rev_group)
+    for mainRev, otherRevs in dbutil.yieldRevGroups():
         meta = JSONMetadataWrapper(deepcopy(mainRev.meta))
 
         alreadyPresent = set(meta.get('dc.contributor.author', what='authority')) - {None, ''}
@@ -58,8 +57,8 @@ def main():
             db.session.add(newRev)
             # Atualiza revisão principal das revisões que tem esta marcada como duplicata
             for rev in otherRevs:
-                assert rev.editable in db.session
-                rev.editable.duplicate_of = newRev
+                assert rev in db.session
+                rev.duplicate_of = newRev
             db.session.commit()
 
     db.session.refresh_materialized_view(db.LastRevision)

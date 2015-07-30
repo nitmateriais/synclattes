@@ -1,6 +1,9 @@
 # -*- encoding: utf-8 -*-
-from sqlalchemy import or_
+from sqlalchemy import select, exists, join, or_
+from sqlalchemy.orm import aliased
+from alchemyext.arraysel import ArraySel
 import db
+
 
 def yieldNotYetSyncedRevisions(q, **kwargs):
     """
@@ -15,6 +18,7 @@ def yieldNotYetSyncedRevisions(q, **kwargs):
                                      (db.LastRevision.id)),
                             db.LastRevision.item_id, **kwargs)
 
+
 def filterDupLastRevGroup(q, rev):
     """ Filtra a query `q` para o grupo de duplicatas da revisão `rev` """
     return q.filter(or_(
@@ -23,60 +27,43 @@ def filterDupLastRevGroup(q, rev):
         db.LastRevision.duplicate_of_id == rev.id))
 
 
-"""
--- Operação realizada por RevGroupVisitor e splitMainRev em SQL puro
---
-select main_id, other_revs from
-(
-    select o.id as main_id, array(select i.id from synclattes.last_revision i where i.duplicate_of_id = o.id) as other_revs
-        from synclattes.last_revision o
-    where o.duplicate_of_id is null
-        and o.meta is not null
-) t
-where array_length(other_revs, 1) > 0
-and exists (
-    select 1
-      from synclattes.last_revision
-      join synclattes.item on last_revision.item_id = item.id
-    where last_revision.id = any (array_append(other_revs, main_id))
-      and item.dspace_cur_rev_id is distinct from last_revision.id)
-"""
+def yieldRevIdGroups(excludeDeletedMeta=True, excludeSingleRevs=True, onlyGroupsPendingSync=True,
+                     batch_size=8192):
 
-class RevGroupVisitor(object):
-    def __init__(self):
-        self.visitedRevIds = set()
+    LastRevMain = aliased(db.LastRevision, name='last_rev_main')
+    LastRevOther = aliased(db.LastRevision, name='last_rev_other')
 
-    def getRevGroup(self, rev):
-        if rev.id in self.visitedRevIds:
-            return []
-        rev_group = filterDupLastRevGroup(db.session.query(db.LastRevision), rev).all()
-        for r in rev_group:
-            if r.id in self.visitedRevIds:
-                return []
-            self.visitedRevIds.add(r.id)
-        return rev_group
+    q = db.session.query(LastRevMain.id.label('main_id'),
+                         ArraySel(select([LastRevOther.id])
+                                  .where(LastRevOther.duplicate_of_id==LastRevMain.id))\
+                         .label('other_revs'))\
+                  .filter(LastRevMain.duplicate_of_id.is_(None))
 
-    def yieldGroups(self):
-        q = db.session.query(db.LastRevision)\
-                      .join(db.LastRevision.item)\
-                      .filter(db.LastRevision.meta.isnot(None))
-        for rev in yieldNotYetSyncedRevisions(q, batch_size=256):
-            rev_group = self.getRevGroup(rev)
-            if len(rev_group) < 2:  # 0 - grupo já visitado
-                continue            # 1 - revisão sem duplicatas
-            yield rev_group
+    if excludeDeletedMeta:
+        q = q.filter(LastRevMain.meta.isnot(None))
 
-def splitMainRev(rev_group):
-    mainRev = None
-    otherRevs = []
-    for rev in rev_group:
-        if rev.duplicate_of_id is None:
-            mainRev = rev
-        else:
-            otherRevs.append(rev)
-    if mainRev is None:
-        raise ValueError('Não foi passado um grupo completo')
-    return mainRev, otherRevs
+    q = q.subquery()
+    outerq = db.session.query(q.c.main_id, q.c.other_revs)
+
+    if excludeSingleRevs:
+        outerq = outerq.filter(db.func.array_length(q.c.other_revs, 1) > 0)
+
+    if onlyGroupsPendingSync:
+        outerq = outerq.filter(
+            exists(select([1])
+                   .select_from(join(db.LastRevision, db.Item, db.LastRevision.item_id==db.Item.id))
+                   .where(db.LastRevision.id ==
+                          db.func.any(db.func.array_append(q.c.other_revs, q.c.main_id)))
+                   .where(db.Item.dspace_cur_rev_id.op('is distinct from')(db.LastRevision.id))))
+
+    return db.yield_batches(outerq, q.c.main_id, batch_size, id_from_row=lambda row:row[0])
+
+
+def yieldRevGroups(**kwargs):
+    for main_id, other_revs in yieldRevIdGroups(**kwargs):
+        yield (db.session.query(db.Revision).filter(db.Revision.id==main_id).one(),
+               db.session.query(db.Revision).filter(db.Revision.id.in_(other_revs)).all())
+
 
 def reassignRevGroup(revisions, mainId):
     # Modifica o campo de todas as revisões, exceto a principal,
@@ -93,6 +80,7 @@ def reassignRevGroup(revisions, mainId):
         .update({db.Revision.duplicate_of_id: None},
                 synchronize_session=False)
     db.session.commit()
+
 
 def checkGroupIntegrity():
     """ Verifica se todos os grupos então com duplicate_of_id uniforme """

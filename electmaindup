@@ -48,13 +48,13 @@ class RevisionJudge(object):
 
 def main():
     assert dbutil.checkGroupIntegrity()
-    for rev_group in dbutil.RevGroupVisitor().yieldGroups():
+    for main_rev, other_revs in dbutil.yieldRevGroups():
+        rev_group = [main_rev] + other_revs
         scoredRevs = sorted(((RevisionJudge(r).score(), r.id)
                              for r in rev_group),
                             reverse=True)
         logger.info('Grupo pontuado: %r' % scoredRevs)
         dbutil.reassignRevGroup(rev_group, scoredRevs[0][1])
-
     assert dbutil.checkGroupIntegrity()
     db.session.refresh_materialized_view(db.LastRevision)
 
