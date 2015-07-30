@@ -42,7 +42,8 @@ def merge(revisions):
 
 
 class DoiDeduplicator(object):
-    def run(self):
+    @staticmethod
+    def run():
         for item_id, uri in yieldItemIdMeta(meta_uri0):
             doi = doiutil.filter(uri)
             if doi:
@@ -58,11 +59,11 @@ class DoiDeduplicator(object):
 
 class TitleDeduplicator(object):
     def __init__(self):
+        self.itemsDone = 0
+        self.total = yieldItemIdMeta(meta_title, only_count=True)
         self.simInq = SimilarTitleInquirer()
 
     def run(self):
-        self.total = yieldItemIdMeta(meta_title, only_count=True)
-        self.itemsDone = 0
         for item_id, title in yieldItemIdMeta(meta_title, batch_size=128):
             if self.itemsDone % 4096 == 0:
                 assert dbutil.checkGroupIntegrity(),\
@@ -84,8 +85,8 @@ class TitleDeduplicator(object):
         # Não corta o loop de candidatos até o primeiro nível com dist != 0
         maxNonCutDist = max(dist for dist, revisions in similars[:2])
 
-        maybeLower = lambda s: util.maybeBind(lambda s:s.lower(), s)
-        meta = JSONMetadataWrapper(db.session.query(db.LastRevision.meta)\
+        maybeLower = lambda s: util.maybeBind(lambda x:x.lower(), s)
+        meta = JSONMetadataWrapper(db.session.query(db.LastRevision.meta)
                                              .filter(db.LastRevision.item_id == item_id).scalar())
         doi = maybeLower(meta.getDoi())
         prodType = meta.getType()
@@ -100,7 +101,7 @@ class TitleDeduplicator(object):
             if noMoreIterations and dist > maxNonCutDist:
                 break
             # Prioriza revisão correspondente ao item atual
-            revisions = sorted(revisions, key=lambda rev:rev.item_id==item_id, reverse=True)
+            revisions = sorted(revisions, key=lambda r:r.item_id == item_id, reverse=True)
             # Percorre revisões
             for rev in revisions:
                 failedIteration = False
@@ -165,7 +166,7 @@ class TitleDeduplicator(object):
         assert len(duplicates) > 0,\
             'Ao menos a própria publicação deveria estar no conjunto de revisões'
         logger.info('[%s]:Encontradas %d revisões para o item %r',
-            self.percent(), len(duplicates), item_id)
+                    self.percent(), len(duplicates), item_id)
         merge(duplicates)
 
 
@@ -207,12 +208,12 @@ def getLowerOfDoiFromRevAndItsDuplicates(rev):
 
 class SimilarTitleInquirer(object):
     _instance = None  # Singleton
-    def __new__(klass, *args, **kwargs):
-        if not klass._instance:
-            klass._instance = super(SimilarTitleInquirer, klass).__new__(klass, *args, **kwargs)
-            klass._instance._populateTitleTempTable()
-            klass._instance._populateSimStringDB()
-        return klass._instance
+    def __new__(cls, *args):
+        if not cls._instance:
+            cls._instance = super(SimilarTitleInquirer, cls).__new__(cls, *args)
+            cls._instance._populateTitleTempTable()
+            cls._instance._populateSimStringDB()
+        return cls._instance
 
     def __del__(self):
         self.ssdb.close()
@@ -261,7 +262,8 @@ class SimilarTitleInquirer(object):
         isNumeral = lambda s: util.isArabicNumeral(s) or util.isRomanNumeral(s.upper())
         return a[:-1] == b[:-1] and a[-1] != b[-1] and isNumeral(a[-1]) and isNumeral(b[-1])
 
-    def _populateTitleTempTable(self):
+    @staticmethod
+    def _populateTitleTempTable():
         logger.info('Indexando versões exatas dos títulos normalizados')
         db.create_temp_table(db.RevNormTitle)
 
@@ -274,7 +276,7 @@ class SimilarTitleInquirer(object):
         g = db.yield_batches(q, db.LastRevision.item_id, batch_size=batch_size,
                              id_from_row=lambda row:row[0])
         for item_id, title in g:
-            db.session.add(db.RevNormTitle(id = item_id, title = util.norm(title)))
+            db.session.add(db.RevNormTitle(id=item_id, title=util.norm(title)))
             i += 1
             if i % batch_size == 0:
                 db.session.commit()
@@ -335,4 +337,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
