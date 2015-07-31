@@ -19,7 +19,7 @@ def yieldNotYetSyncedRevisions(q, **kwargs):
                             db.LastRevision.item_id, **kwargs)
 
 
-def filterDupLastRevGroup(q, rev):
+def filterLastRevGroup(q, rev):
     """ Filtra a query `q` para o grupo de duplicatas da revisão `rev` """
     return q.filter(or_(
         db.LastRevision.id == rev.id,

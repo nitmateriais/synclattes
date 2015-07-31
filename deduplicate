@@ -197,7 +197,7 @@ def yieldItemIdMeta(metaExpr, batch_size=16384, only_count=False):
 def getLowerOfDoiFromRevAndItsDuplicates(rev):
     """ Obtém o DOI (em minúsculas) da revisão `rev` ou de alguma de suas duplicatas """
     q = db.session.query(db.func.lower(meta_uri0))
-    doiSet = set(util.firstOrNone(row) for row in dbutil.filterDupLastRevGroup(q, rev).all())
+    doiSet = set(util.firstOrNone(row) for row in dbutil.filterLastRevGroup(q, rev).all())
     doiSet = {doiutil.filter(doi) for doi in doiSet}
     doiSet = doiSet - {None,}
     if len(doiSet) > 1:
@@ -257,7 +257,7 @@ class SimilarTitleInquirer(object):
         - 'Como casar strings de títulos - 1.' e 'Como casar strings de títulos 2'
         - 'Numerais romanos devem ser lembrados; I' e 'Numerais romanos devem ser lembrados, II.'
         """
-        preproc = lambda s: re.split(r'\s+', re.sub('[^a-z\s\d]', '', util.norm(s)).strip())
+        preproc = lambda s: re.split(r'\s+', util.norm(s, util.NormLevel.REMOVE_PUNCTUATION).strip())
         a, b = preproc(a), preproc(b)
         isNumeral = lambda s: util.isArabicNumeral(s) or util.isRomanNumeral(s.upper())
         return a[:-1] == b[:-1] and a[-1] != b[-1] and isNumeral(a[-1]) and isNumeral(b[-1])

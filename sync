@@ -18,7 +18,7 @@ def main():
 
 
 class DSpaceOperations(object):
-    editIriRegex = re.compile(r'^' + dspaceconf.editIri.replace('%d', r'(\d+)') + r'$')
+    editIriRegex = re.compile(r'^' + re.escape(dspaceconf.editIri).replace(r'\%d', r'(\d+)') + r'$')
     nsmap = {'atom': 'http://www.w3.org/2005/Atom'}
     def __init__(self):
         self.c = sword2.Connection(dspaceconf.serviceDocument, dspaceconf.username, dspaceconf.password)

@@ -2,7 +2,6 @@
 import re, unicodedata
 import lxml.html
 import conf.wsconf as wsconf
-import logging
 
 def onlyNumbers(s):
     """ Remove caracteres não-numéricos da string """
@@ -40,7 +39,7 @@ def decodeHtml(s, encoding=wsconf.serverEncoding):
         s = s.decode(encoding)
     try:
         return lxml.html.document_fromstring(s).text_content()\
-               .replace(u'\xa0', u' ') # converte '&nbsp;' para espaço comum
+               .replace(u'\xa0', u' ')  # converte '&nbsp;' para espaço comum
     except:
         return s
 
@@ -101,7 +100,7 @@ def uniq(seq):
     # http://stackoverflow.com/a/480227
     seen = set()
     seen_add = seen.add
-    return [ x for x in seq if not (x in seen or seen_add(x))]
+    return [x for x in seq if not (x in seen or seen_add(x))]
 
 def maybeBind(f, value):
     """ Operador de bind no monad Maybe, onde Nothing é representado por None """
