@@ -13,7 +13,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger('sync')
 
 def main():
-    for main_rev, other_revs in dbutil.yieldRevGroups(excludeSingleRevs=False):
+    for main_rev, other_revs in dbutil.yieldRevGroups(excludeDeletedMeta=False, excludeSingleRevs=False):
         logger.info('%r -> %r', main_rev.id, [x.id for x in other_revs])
 
 

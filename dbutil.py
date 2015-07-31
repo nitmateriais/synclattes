@@ -60,6 +60,7 @@ def yieldRevIdGroups(excludeDeletedMeta=True, excludeSingleRevs=True, onlyGroups
 def yieldRevGroups(**kwargs):
     for main_id, other_revs in yieldRevIdGroups(**kwargs):
         yield (db.session.query(db.Revision).filter(db.Revision.id == main_id).one(),
+               [] if len(other_revs) == 0 else
                db.session.query(db.Revision).filter(db.Revision.id.in_(other_revs)).all())
 
 
