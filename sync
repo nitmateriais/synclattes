@@ -94,7 +94,6 @@ def main():
 
         db.session.commit()
 
-    db.session.refresh_materialized_view(db.LastRevision)
     ops.logout()
 
 
