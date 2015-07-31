@@ -13,8 +13,89 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger('sync')
 
 def main():
+    ops = DSpaceOperations()
+
     for main_rev, other_revs in dbutil.yieldRevGroups(excludeDeletedMeta=False, excludeSingleRevs=False):
-        logger.info('%r -> %r', main_rev.id, [x.id for x in other_revs])
+        all_revs = [main_rev] + other_revs
+        dspace_item_id = None
+
+        logging.info('Sincronizando grupo %r', all_revs)
+
+        # Verifica flag nosync
+        for rev in all_revs:
+            if rev.item.nosync:
+                logger.info('Recusando sincronia devido à flag nosync no item %d',
+                            rev.item.id)
+                continue
+
+        # Envia metadados
+        if main_rev.meta is not None:
+            if main_rev.item.dspace_item_id:
+                # Caso um item do DSpace já tenha sido alocado alguma vez para o
+                # novo item principal, utiliza o ID desse item
+                dspace_item_id = main_rev.item.dspace_item_id
+            else:
+                # Utiliza o ID de algum dos outros itens do grupo, caso exista
+                # Dá preferência para IDs que estejam ativos (not-withdrawn)
+                result = util.firstOrNone((rev.item.dspace_item_id, rev.item)
+                                          for rev in other_revs
+                                          if rev.item.dspace_item_id is not None
+                                          and rev.item.dspace_item_active)
+                if result is None:
+                    # Se não existir ID ativo, obtém um ID inativo, caso exista
+                    result = util.firstOrNone((rev.item.dspace_item_id, rev.item)
+                                              for rev in other_revs
+                                              if rev.item.dspace_item_id is not None)
+                    if result is not None:
+                        ops.item_reinstate(dspace_item_id)
+                if result is not None:
+                    # Remove o ID do item no qual estava antes
+                    dspace_item_id, item = result
+                    assert item in db.session
+                    item.dspace_item_id = None
+                    item.dspace_item_active = False
+
+            on_behalf_of = None  # TODO: preencher com email do CV após integração com LDAP
+            meta = JSONMetadataWrapper(main_rev.meta)
+            if dspace_item_id is None:
+                dspace_item_id = ops.item_deposit(meta.toXml(), on_behalf_of=on_behalf_of)
+                logger.info('Item %d (item %d local) submetido ao DSpace',
+                            dspace_item_id, main_rev.item.id)
+            else:
+                ops.item_update_metadata(dspace_item_id, meta.toXml(), on_behalf_of=on_behalf_of)
+                logger.info('Item %d (item %d local) atualizado no DSpace',
+                            dspace_item_id, main_rev.item.id)
+
+            assert main_rev.item in db.session
+            main_rev.item.dspace_item_id = dspace_item_id
+            main_rev.item.dspace_item_active = True
+
+        # Coleta lixo
+        for rev in all_revs:
+            curid = rev.item.dspace_item_id
+            active = rev.item.dspace_item_active
+            if active and curid is not None and curid != dspace_item_id:
+                # Limpa entradas que foram mescladas ou cujos metadados foram apagados
+                if ops.item_has_bitstreams(curid):
+                    logging.warning('O item %d do DSpace, correspondente ao item %d local, seria ' +
+                                    'apagado, mas foi poupado por conter bitstreams associados. ' +
+                                    'Por favor revise manualmente esse item e congele-o.',
+                                    curid, rev.item.id)
+                else:
+                    ops.item_withdraw(curid)
+                    logger.info('Item %d (item %d local) removido do DSpace', curid, rev.item.id)
+                    assert rev.item in db.session
+                    rev.item.dspace_item_active = False
+
+        # Marca os itens com as últimas revisões
+        for rev in all_revs:
+            assert rev.item in db.session
+            rev.item.dspace_cur_rev_id = rev.id
+
+        db.session.commit()
+
+    db.session.refresh_materialized_view(db.LastRevision)
+    ops.logout()
 
 
 class DSpaceOperations(object):
