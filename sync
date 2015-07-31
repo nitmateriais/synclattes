@@ -19,7 +19,7 @@ def main():
         all_revs = [main_rev] + other_revs
         dspace_item_id = None
 
-        logging.info('Sincronizando grupo %r', all_revs)
+        logging.info('Sincronizando grupo %r', [rev.id for rev in all_revs])
 
         # Verifica flag nosync
         for rev in all_revs:
